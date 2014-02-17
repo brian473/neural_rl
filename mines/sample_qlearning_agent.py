@@ -1,0 +1,154 @@
+# Author: Brian Brown
+# Date: 2/17/14
+# Some code used from sample_sarsa_agent.py, author Brian Tanner
+
+import random
+import sys
+import copy
+import pickle
+from rlglue.agent.Agent import Agent
+from rlglue.agent import AgentLoader as AgentLoader
+from rlglue.types import Action
+from rlglue.types import Observation
+from rlglue.utils import TaskSpecVRLGLUE3
+from random import Random
+
+class QLearnAgent(Agent):
+	
+	randGenerator=Random()
+	lastAction=Action()
+	lastObservation=Observation()
+	alpha = 0.1
+	epsilon = 0.5
+	gamma = 0.9
+	numStates = 0
+	numActions = 0
+	qvalues = None
+
+	def agent_init(self, taskSpecification):
+		#copied from sample sarsa agent
+		TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(taskSpecification)
+		if TaskSpec.valid:
+			assert len(TaskSpec.getIntObservations())==1, "expecting 1-dimensional discrete observations"
+			assert len(TaskSpec.getDoubleObservations())==0, "expecting no continuous observations"
+			assert not TaskSpec.isSpecial(TaskSpec.getIntObservations()[0][0]), " expecting min observation to be a number not a special value"
+			assert not TaskSpec.isSpecial(TaskSpec.getIntObservations()[0][1]), " expecting max observation to be a number not a special value"
+			self.numStates=TaskSpec.getIntObservations()[0][1]+1;
+
+			assert len(TaskSpec.getIntActions())==1, "expecting 1-dimensional discrete actions"
+			assert len(TaskSpec.getDoubleActions())==0, "expecting no continuous actions"
+			assert not TaskSpec.isSpecial(TaskSpec.getIntActions()[0][0]), " expecting min action to be a number not a special value"
+			assert not TaskSpec.isSpecial(TaskSpec.getIntActions()[0][1]), " expecting max action to be a number not a special value"
+			self.numActions=TaskSpec.getIntActions()[0][1]+1;
+			
+			self.qvalues=[self.numActions*[0.0] for i in range(self.numStates)]
+
+		else:
+			print "Task Spec could not be parsed: "+taskSpecString;
+			
+		self.lastAction=Action()
+		self.lastObservation=Observation()
+
+	def get_action(self, state):
+		if self.randGenerator.random() < self.epsilon:
+			self.epsilon -= .01
+			if (self.epsilon < .01):
+				self.epsilon = .01
+			return self.randGenerator.randint(0,self.numActions-1)
+		
+		return self.qvalues[state].index(max(self.qvalues[state]))
+
+
+	def update_qvalues(self, reward, state, action, nextState):
+		q_sa = self.qvalues[state][action]
+		
+		max_q_sa_prime = max(self.qvalues[nextState])
+
+		self.qvalues[state][action] = q_sa + (self.alpha * (reward + (self.gamma * max_q_sa_prime) - q_sa))
+
+	def update_qvalues_terminal(self, reward, state, action):
+		q_sa = self.qvalues[state][action]
+
+		self.qvalues[state][action] = q_sa + (self.alpha * (reward - q_sa))
+	
+	# (Observation) -> Action
+	def agent_start(self, observation):
+		state = observation.intArray[0]
+
+		actionChoice = self.get_action(state)
+
+		action = Action()
+		action.intArray = [actionChoice]
+
+		self.lastAction = copy.deepcopy(action)
+		self.lastObservation = copy.deepcopy(observation)
+
+		return action
+		
+	
+	# (double, Observation) -> Action
+	def agent_step(self, reward, observation):
+		newState = observation.intArray[0]
+
+		lastState=self.lastObservation.intArray[0]
+		lastAction=self.lastAction.intArray[0]
+
+		self.update_qvalues(reward, lastState, lastAction, newState)
+
+		actionChoice = self.get_action(newState)
+
+		action = Action()
+		action.intArray = [actionChoice]
+
+		self.lastAction = copy.deepcopy(action)
+		self.lastObservation = copy.deepcopy(observation)
+
+		return action
+	
+	# (double) -> void
+	def agent_end(self, reward):
+		lastState=self.lastObservation.intArray[0]
+		lastAction=self.lastAction.intArray[0]
+
+		self.update_qvalues_terminal(reward, lastState, lastAction)
+	
+	def agent_cleanup(self):
+		pass
+
+	def save_value_function(self, fileName):
+		theFile = open(fileName, "w")
+		pickle.dump(self.qvalues, theFile)
+		theFile.close()
+
+	def load_value_function(self, fileName):
+		theFile = open(fileName, "r")
+		self.qvalues=pickle.load(theFile)
+		theFile.close()
+	
+	def agent_message(self,inMessage):
+		#Message Description
+	 	# save_policy FILENAME
+	 	# Action: Save current value function in binary format to 
+		# file called FILENAME
+		#
+		if inMessage.startswith("save_policy"):
+			splitString=inMessage.split(" ");
+			self.save_value_function(splitString[1]);
+			print "Saved.";
+			return "message understood, saving policy"
+
+		#Message Description
+	 	# load_policy FILENAME
+	 	# Action: Load value function in binary format from 
+		# file called FILENAME
+		#
+		if inMessage.startswith("load_policy"):
+			splitString=inMessage.split(" ")
+			self.load_value_function(splitString[1])
+			print "Loaded."
+			return "message understood, loading policy"
+
+		return "QLearnAgent(Python) does not understand your message."
+
+if __name__=="__main__":
+	AgentLoader.loadAgent(QLearnAgent())
