@@ -68,7 +68,7 @@ class NeuralQLearnAgent(Agent):
         self.saving = True
         self.trainer_set_up = False
         self.total_reward = 0
-        self.batch_size = 32
+        self.batch_size = 3000
         
         #starting epsilon value
         self.epsilon = 1
@@ -198,12 +198,12 @@ class NeuralQLearnAgent(Agent):
         dataset = self.data.get_random_dataset()
                 
         #setup training set
-        if not self.trainer_set_up:
-            self.trainer.setup(self.cnn, dataset)
-            self.trainer_set_up = True
+        #if not self.trainer_set_up:
+        #    self.trainer.setup(self.cnn, dataset)
+        #    self.trainer_set_up = True
         
         #train on next set of data
-        self.trainer.train(dataset)
+        #self.trainer.train(dataset)
         print "Took ", time.time() - t0, " seconds."
 
 
@@ -233,7 +233,7 @@ class NeuralQLearnAgent(Agent):
         
         self.data.counter += 1
         if self.data.counter == self.batch_size:
-            if len(self.data) > 5000:
+            if len(self.data) > 2000:
                 self.train_nn()
             self.data.counter = 0
         
@@ -275,7 +275,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, self.last_action.intArray[0], reward)
         
         if self.data.counter == self.batch_size:
-            if len(self.data) > 5000:
+            if len(self.data) > 2000:
                 self.train_nn()
             self.data.counter = 0
             
@@ -289,6 +289,9 @@ class NeuralQLearnAgent(Agent):
         a file name can be provided by the experiment.
         """
         pass
+
+
+
 
     def agent_message(self, in_message):
         """
