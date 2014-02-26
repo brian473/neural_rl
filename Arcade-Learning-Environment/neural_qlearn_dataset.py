@@ -104,7 +104,6 @@ class NeuralQLearnDataset:
             rewards.append(self.rewards[data_num])
    
         #create nparrays
-        print "nparray"
         states_nparray = np.empty((self.batch_size, len(states[0])))
         next_states_nparray = np.empty((self.batch_size, len(next_states[0])))
         for i in range (self.batch_size):
@@ -113,7 +112,6 @@ class NeuralQLearnDataset:
         
         states = states_nparray.astype('float32')
         next_states = next_states_nparray.astype('float32')
-        print "done nparray"
         
         #normalize values
         states /= 256.0

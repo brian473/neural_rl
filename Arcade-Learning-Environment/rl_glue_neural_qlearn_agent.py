@@ -68,7 +68,7 @@ class NeuralQLearnAgent(Agent):
         self.saving = True
         self.trainer_set_up = False
         self.total_reward = 0
-        self.batch_size = 3000
+        self.batch_size = 2048
         
         #starting epsilon value
         self.epsilon = 1
