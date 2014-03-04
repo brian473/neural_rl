@@ -43,6 +43,7 @@ from pylearn2.space import Conv2DSpace
 from pylearn2.termination_criteria import EpochCounter
 import neural_qlearn_dataset as nqd
 import time
+import theano.tensor as T
 
 from random import Random
 
@@ -65,19 +66,24 @@ class NeuralQLearnAgent(Agent):
 
         self.image = None
         self.show_ale = False
-        self.saving = True
-        self.trainer_set_up = False
+        self.saving = False
         self.total_reward = 0
-        self.batch_size = 2048
+        self.batch_size = 1024 #must be a multiple of 32
+        self.episode_count = 0
+        learning_rate = .5
+        self.testing_policy = False
+        load_file = False
+        load_file_name = "cnnparams.pkl"
+        self.save_file_name = "cnnparams.pkl"
         
-        #starting epsilon value
+        #starting value for epsilon-greedy
         self.epsilon = 1
 
         TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(task_spec_string)
         if TaskSpec.valid:
             
-            assert ((len(TaskSpec.getIntObservations())== 0) !=
-                    (len(TaskSpec.getDoubleObservations()) == 0 )), \
+            assert ((len(TaskSpec.getIntObservations())== 0) != \
+                (len(TaskSpec.getDoubleObservations()) == 0 )), \
                 "expecting continous or discrete observations.  Not both."
             assert len(TaskSpec.getDoubleActions())==0, \
                 "expecting no continuous actions"
@@ -85,29 +91,48 @@ class NeuralQLearnAgent(Agent):
                 " expecting min action to be a number not a special value"
             assert not TaskSpec.isSpecial(TaskSpec.getIntActions()[0][1]), \
                 " expecting max action to be a number not a special value"
-            self.num_actions=TaskSpec.getIntActions()[0][1]+1;
+            self.num_actions=TaskSpec.getIntActions()[0][1]+1
 
         
         self.int_states = len(TaskSpec.getIntObservations()) > 0
 
         # Create neural network and initialize trainer and dataset
-
-        self.first_conv_layer = mlp.ConvRectifiedLinear(16, (8, 8), (1, 1), (1, 1), "first conv layer", irange=.1, kernel_stride=(4, 4))
-        self.second_conv_layer = mlp.ConvRectifiedLinear(32, (4, 4), (1, 1), (1, 1), "second conv layer", irange=.1, kernel_stride=(2, 2))
-        self.rect_layer = mlp.RectifiedLinear(dim=256, layer_name="rectified layer", irange=.1)
-        self.output_layer = mlp.Linear(self.num_actions, "output layer", irange=.1)
-
-        layers = [self.first_conv_layer, self.second_conv_layer, self.rect_layer, self.output_layer]
-
-        self.cnn = mlp.MLP(layers, input_space = Conv2DSpace((80, 105), num_channels=4), batch_size=self.batch_size)
         
-        self.trainer = sgd.SGD(learning_rate=.005, batch_size=self.batch_size, batches_per_iter=1, train_iteration_mode='sequential', termination_criterion=EpochCounter(1))
+        if load_file:
+            thefile = open(load_file_name, "r")
+            
+            self.cnn = cPickle.load(thefile)
+        else:
+        
+            self.first_conv_layer = mlp.ConvRectifiedLinear(16, (8, 8), (1, 1), 
+                            (1, 1), "first conv layer", irange=.1, 
+                                            kernel_stride=(4, 4))
+                                            
+            self.second_conv_layer = mlp.ConvRectifiedLinear(32, (4, 4), 
+                            (1, 1), (1, 1), "second conv layer", irange=.1, 
+                                            kernel_stride=(2, 2))
+                                            
+            self.rect_layer = mlp.RectifiedLinear(dim=256, 
+                            layer_name="rectified layer", irange=.1)
+                            
+            self.output_layer = mlp.Linear(self.num_actions, "output layer", 
+                            irange=.1)
 
-        self.data = nqd.NeuralQLearnDataset(self.cnn, batch_size = self.batch_size)
+            layers = [self.first_conv_layer, self.second_conv_layer, 
+                            self.rect_layer, self.output_layer]
+
+            self.cnn = mlp.MLP(layers, input_space = Conv2DSpace((80, 105), 
+                            num_channels=4), batch_size=self.batch_size)
+
+        self.data = nqd.NeuralQLearnDataset(self.cnn, batch_size = 
+                        self.batch_size, learning_rate=learning_rate)
+                        
 
         #Create appropriate RL-Glue objects for storing these. 
         self.last_action=Action()
         self.last_observation=Observation()
+        
+        print "Policy test results"
 
 
 
@@ -141,14 +166,20 @@ class NeuralQLearnAgent(Agent):
         Uses epsilon-greedy.
         """
         #reduce epsilon linearly to .1 after 900,000 steps
-        self.epsilon -= .000001
-        if (self.epsilon < .1):
-            self.epsilon = .1
-        if self.randGenerator.random() < self.epsilon or len(self.data) <= 5:
+        epsilon = self.epsilon
+        
+        if self.testing_policy:
+            epsilon = .01
+        else:
+            self.epsilon -= .000001
+            if (self.epsilon < .1):
+                self.epsilon = .1
+                
+        if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             return self.randGenerator.randint(0,self.num_actions-1)
             
         state = self.data.get_cur_state()
-            
+        
         qvalues = self.cnn.fprop(state).eval()
         
         qvalues = qvalues.tolist()
@@ -182,7 +213,8 @@ class NeuralQLearnAgent(Agent):
             self.last_observation.intArray).reshape((80, 105))
         img = np.transpose(img)
         if self.image == None:
-            self.image = plt.imshow(img/256.0, interpolation='none',cmap="gray")
+            self.image = plt.imshow(img/256.0, interpolation='none', \
+                                            cmap="gray")
             fig = plt.gcf()
             fig.set_size_inches(4,3)
             plt.show()
@@ -190,22 +222,6 @@ class NeuralQLearnAgent(Agent):
             self.image.set_data(img/256.0)
         plt.draw()
         time.sleep(.0)
-        
-    def train_nn(self):
-        t0 = time.time()
-        print "Training ..."
-        #get training data
-        dataset = self.data.get_random_dataset()
-                
-        #setup training set
-        #if not self.trainer_set_up:
-        #    self.trainer.setup(self.cnn, dataset)
-        #    self.trainer_set_up = True
-        
-        #train on next set of data
-        #self.trainer.train(dataset)
-        print "Took ", time.time() - t0, " seconds."
-
 
     def agent_step(self, reward, observation):
         """
@@ -229,13 +245,11 @@ class NeuralQLearnAgent(Agent):
         if reward < 0:
             reward = -1
         
-        self.data.add(self.last_observation.intArray, self.last_action.intArray[0], reward)
+        self.data.add(self.last_observation.intArray, \
+                        self.last_action.intArray[0], reward)
         
-        self.data.counter += 1
-        if self.data.counter == self.batch_size:
-            if len(self.data) > 2000:
-                self.train_nn()
-            self.data.counter = 0
+        if len(self.data) > 1000 and not self.testing_policy:
+            self.data.train()
         
         this_int_action = self.get_action()
         return_action = Action()
@@ -262,9 +276,21 @@ class NeuralQLearnAgent(Agent):
         """
         self.total_reward += reward
         
-        print "Total reward for this episode: ", self.total_reward
+        if self.testing_policy:
+            print self.total_reward
         
         self.total_reward = 0
+        if len(self.data) > 1000:
+            if self.episode_count == 1 and not self.testing_policy:
+                self.testing_policy = True
+            elif self.testing_policy:
+                self.episode_count = 0
+                self.testing_policy = False
+                if self.saving:
+                    self.save_params(self.save_file_name)
+            else:
+                self.episode_count+=1
+            
         
         if reward > 0:
             reward = 1
@@ -272,12 +298,11 @@ class NeuralQLearnAgent(Agent):
         if reward < 0:
             reward = -1
         
-        self.data.add(self.last_observation.intArray, self.last_action.intArray[0], reward)
+        self.data.add(self.last_observation.intArray, \
+                        self.last_action.intArray[0], reward)
         
-        if self.data.counter == self.batch_size:
-            if len(self.data) > 2000:
-                self.train_nn()
-            self.data.counter = 0
+        if len(self.data) > 10000:
+            self.data.train()
             
         #self.data.reset_data()
         
@@ -289,9 +314,11 @@ class NeuralQLearnAgent(Agent):
         a file name can be provided by the experiment.
         """
         pass
-
-
-
+        
+    def save_params(self, filename="cnnparams.pkl"):
+        the_file = open(filename, "w")
+        
+        cPickle.dump(self.cnn, the_file, -1)
 
     def agent_message(self, in_message):
         """
@@ -307,10 +334,10 @@ class NeuralQLearnAgent(Agent):
             cPickle.dump(all_data, the_file, -1)
             #print "Simulated at a rate of {}/s".format(len(self.rewards) / 
             #                                           total_time)
-            return "File saved successfully";
+            return "File saved successfully"
 
         else:
-            return "I don't know how to respond to your message";
+            return "I don't know how to respond to your message"
 
 
 if __name__=="__main__":
