@@ -14,12 +14,13 @@ import rlglue.RLGlue as RLGlue
 import time
 
 def main():
-    num_episodes = 2
-    max_steps_per_episode = 18000
+    num_episodes = 100
+    max_steps_per_episode = 50000
     RLGlue.RL_init()
     for episode in range(0,num_episodes):
         RLGlue.RL_episode(max_steps_per_episode)
-        print "Episode finished.", time.time()
+        #print "Episode finished.", time.time()
+        #print "Score: ", RLGlue.RL_return()
     
     RLGlue.RL_agent_message("save_data data.pkl");
 
