@@ -1,4 +1,4 @@
-import subprocess 
+port subprocess 
 
 PROJECT_BASE = "/home/brian/workspace/ale_git/neural_rl/"
 ALE_PATH = PROJECT_BASE + "Arcade-Learning-Environment/"
