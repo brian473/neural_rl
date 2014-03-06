@@ -70,7 +70,7 @@ class NeuralQLearnAgent(Agent):
         self.total_reward = 0
         self.batch_size = 1024 #must be a multiple of 32
         self.episode_count = 0
-        learning_rate = .5
+        learning_rate = 10
         self.testing_policy = False
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -249,7 +249,9 @@ class NeuralQLearnAgent(Agent):
                         self.last_action.intArray[0], reward)
         
         if len(self.data) > 1000 and not self.testing_policy:
+            t = time.time()
             self.data.train()
+            print "took ", time.time() - t, "s"
         
         this_int_action = self.get_action()
         return_action = Action()
