@@ -132,7 +132,8 @@ class NeuralQLearnAgent(Agent):
         self.last_action=Action()
         self.last_observation=Observation()
         
-        print "Policy test results"
+        if self.saving:
+            print "Policy test results"
 
 
 
