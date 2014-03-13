@@ -68,9 +68,9 @@ class NeuralQLearnAgent(Agent):
         self.show_ale = False
         self.saving = False
         self.total_reward = 0
-        self.batch_size = 1024 #must be a multiple of 32
+        self.batch_size = 256 #must be a multiple of 32
         self.episode_count = 0
-        learning_rate = 10
+        learning_rate = .05
         self.testing_policy = False
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -248,7 +248,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.last_action.intArray[0], reward)
         
-        if len(self.data) > 1000 and not self.testing_policy:
+        if len(self.data) > self.batch_size * 5 and not self.testing_policy:
             t = time.time()
             self.data.train()
             print "took ", time.time() - t, "s"
@@ -283,7 +283,7 @@ class NeuralQLearnAgent(Agent):
         
         self.total_reward = 0
         if len(self.data) > 1000:
-            if self.episode_count == 1 and not self.testing_policy:
+            if self.episode_count == 1 and not self.testing_policy and self.saving:
                 self.testing_policy = True
             elif self.testing_policy:
                 self.episode_count = 0
@@ -303,7 +303,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.last_action.intArray[0], reward)
         
-        if len(self.data) > 10000:
+        if len(self.data) > self.batch_size * 5:
             self.data.train()
             
         #self.data.reset_data()

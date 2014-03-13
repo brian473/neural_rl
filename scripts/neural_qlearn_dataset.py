@@ -3,13 +3,14 @@ from pylearn2.datasets.dense_design_matrix import DefaultViewConverter
 import numpy as np
 import theano
 from theano.compat.python2x import OrderedDict
+from pylearn2.space import VectorSpace
 from pylearn2.utils import safe_zip
 import theano.tensor as T
 import copy
 from itertools import izip
+from pylearn2.utils.data_specs import DataSpecsMapping
 
 from random import Random
-
 
 class NeuralQLearnDataset:
     randGenerator=Random()
@@ -30,7 +31,51 @@ class NeuralQLearnDataset:
         self.actions = []
         self.rewards = []
         self.cnn = cnn
-        self.train_mini_batches = False
+        self.train_mini_batches = True
+        
+        self.setup_training()
+        
+    def setup_training(self):
+        """
+        Sets up training function.
+        """
+        
+        training_batch_size = self.batch_size
+        if self.train_mini_batches:
+            training_batch_size = 32
+        
+        cost = self.cnn.get_default_cost()
+        
+        data_specs = cost.get_data_specs(self.cnn)
+        mapping = DataSpecsMapping(data_specs)
+        space_tuple = mapping.flatten(data_specs[0], return_tuple=True)
+        source_tuple = mapping.flatten(data_specs[1], return_tuple=True)
+        
+        theano_args = []
+        for space, source in safe_zip(space_tuple, source_tuple):
+            name = '%s[%s]' % (self.__class__.__name__, source)
+            arg = space.make_theano_batch(name=name,
+                        batch_size=training_batch_size).astype("float32")
+            theano_args.append(arg)
+        theano_args = tuple(theano_args)
+        
+        y_hat = self.cnn.fprop(theano_args[0])
+        
+        cost = self.cnn.cost(theano_args[1], y_hat)
+        
+        params = list(self.cnn.get_params())
+        grads = T.grad(cost, params, disconnected_inputs='ignore')
+        
+        gradients = OrderedDict(izip(params, grads))
+        
+        updates = OrderedDict()
+        
+        updates.update(dict(safe_zip(params, [param - self.learning_rate * 
+                                gradients[param] for param in params])))
+                                
+        self.training = theano.function(theano_args, updates=updates, 
+                                        on_unused_input='ignore',)
+        
 
     def add(self, data, action, reward):
         """
@@ -61,11 +106,10 @@ class NeuralQLearnDataset:
         """
         
         formatted_data = []
-        states = []
-        next_states = []
+        states = state = np.empty((self.batch_size, 33600), dtype='float32')
+        next_states = state = np.empty((self.batch_size, 33600), dtype='float32')
         actions = []
         rewards = []
-        states_nparray = []
         
         #create training batch
         for i in range(self.batch_size):
@@ -91,38 +135,28 @@ class NeuralQLearnDataset:
             state[(8400 * 3):] = self.data[data_num - 1].astype('float32')
             
             #put values into lists
-            states.append(state)
-            next_states.append(next_state)
+            states[i] = state
+            next_states[i] = state
             actions.append(self.actions[data_num])
             rewards.append(self.rewards[data_num])
-   
-        #create nparrays
-        states_nparray = np.empty((self.batch_size, len(states[0])))
-        next_states_nparray = np.empty((self.batch_size, len(next_states[0])))
-        for i in range (self.batch_size):
-            states_nparray[i] = states[i]
-            next_states_nparray[i] = next_states[i]
-        
-        states = states_nparray.astype('float32')
-        next_states = next_states_nparray.astype('float32')
         
         #normalize values
         states /= 256.0
         next_states /= 256.0
         
+        states_np_array = states
+        
         #create theano tensors
         states = theano.shared(states, name='input')
         states = T.reshape(states, (self.batch_size, 80, 105, 4))
         states = T.cast(states, dtype='floatX')
-            
+        
         next_states = theano.shared(next_states, name='input_max')
         next_states = T.reshape(next_states, (self.batch_size, 80, 105, 4))
         next_states = T.cast(next_states, dtype='floatX')
         
         #get output predictions from nn using the states batch
         q_sa_list = self.cnn.fprop(states).eval()
-        
-        y_hat = copy.deepcopy(q_sa_list)
         
         #get max of Q(s, a)' for next state batch
         q_sa_prime_list = self.cnn.fprop(next_states).eval()
@@ -137,40 +171,19 @@ class NeuralQLearnDataset:
         #perform SGD update
         num_mini_batches = self.batch_size / 32
         
-        val1 = self.cnn.get_params()[6].get_value()
-        
         if self.train_mini_batches:
             for i in range(num_mini_batches - 1):
-                cost = self.cnn.cost(q_sa_list[i * num_mini_batches : i + 1 * \
-                                                    num_mini_batches] , \
-                                                    y_hat[i * num_mini_batches : \
-                                                    i + 1 * num_mini_batches])
-                
-                params = list(self.cnn.get_params())
-                grads = T.grad(cost, params, disconnected_inputs='ignore')
-            
-                gradients = OrderedDict(izip(params, grads))
+                batch_q_sa = q_sa_list[i * num_mini_batches : 32 + i * \
+                                                    num_mini_batches]
+                batch_data = states_np_array[i * num_mini_batches : 32 + i * \
+                                                    num_mini_batches]
+                                                    
+                batch_data = batch_data.reshape((32, 80, 105, 4))
 
-                for param in params:
-                    #perform update
-                    update = (param, param - self.learning_rate * gradients[param])
-                    train = theano.function([], updates=[update], on_unused_input='ignore')
-        
-                    train()
+                self.training(batch_data, batch_q_sa)
         else:
-            cost = self.cnn.cost(q_sa_list, y_hat)
-            
-            params = list(self.cnn.get_params())
-            grads = T.grad(cost, params, disconnected_inputs='ignore')
-            
-            gradients = OrderedDict(izip(params, grads))
-            
-            for param in params:
-                #perform update
-                update = (param, param - self.learning_rate * gradients[param])
-                train = theano.function([], updates=[update], on_unused_input='ignore')
-        
-                train()
+            states_np_array = states_np_array.reshape((self.batch_size, 80, 105, 4))
+            self.training(states_np_array, q_sa_list)
         
     def get_cur_state(self):
         #combine last four states
@@ -185,7 +198,7 @@ class NeuralQLearnDataset:
         state /= 256.0
         
         #create theano variables
-        state = theano.shared(state, name='input', borrow=True)
+        state = theano.shared(state, name='input')
         state = T.reshape(state, (1, 80, 105, 4))
         state = T.cast(state, dtype='floatX')
         return state
