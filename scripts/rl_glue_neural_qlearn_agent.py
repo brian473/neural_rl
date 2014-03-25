@@ -70,7 +70,7 @@ class NeuralQLearnAgent(Agent):
         self.total_reward = 0
         self.batch_size = 256 #must be a multiple of 32
         self.episode_count = 0
-        learning_rate = .05
+        learning_rate = .0005
         self.testing_policy = False
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -106,11 +106,11 @@ class NeuralQLearnAgent(Agent):
         
             self.first_conv_layer = mlp.ConvRectifiedLinear(16, (8, 8), (1, 1), 
                             (1, 1), "first conv layer", irange=.1, 
-                                            kernel_stride=(4, 4))
+                                            kernel_stride=(1, 1))
                                             
             self.second_conv_layer = mlp.ConvRectifiedLinear(32, (4, 4), 
                             (1, 1), (1, 1), "second conv layer", irange=.1, 
-                                            kernel_stride=(2, 2))
+                                            kernel_stride=(1, 1))
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
                             layer_name="rectified layer", irange=.1)
