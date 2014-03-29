@@ -66,12 +66,13 @@ class NeuralQLearnAgent(Agent):
 
         self.image = None
         self.show_ale = False
-        self.saving = False
+        self.saving = True
         self.total_reward = 0
         self.batch_size = 256 #must be a multiple of 32
         self.episode_count = 0
         learning_rate = .0005
-        self.testing_policy = False
+        self.testing_policy = True
+        self.policy_test_file_name = "results"
         load_file = False
         load_file_name = "cnnparams.pkl"
         self.save_file_name = "cnnparams.pkl"
@@ -133,7 +134,9 @@ class NeuralQLearnAgent(Agent):
         self.last_observation=Observation()
         
         if self.saving:
-            print "Policy test results"
+            thefile = open(self.policy_test_file_name, "w")
+            thefile.write("Policy test results\n")
+            thefile.close()
 
 
 
@@ -249,7 +252,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.last_action.intArray[0], reward)
         
-        if len(self.data) > self.batch_size * 5 and not self.testing_policy:
+        if len(self.data) > 100 and not self.testing_policy:
             t = time.time()
             self.data.train()
             print "took ", time.time() - t, "s"
@@ -279,8 +282,11 @@ class NeuralQLearnAgent(Agent):
         """
         self.total_reward += reward
         
+        #print the reward for this policy
         if self.testing_policy:
-            print self.total_reward
+            thefile = open(self.policy_test_file_name, "a")
+            thefile.write(str(self.total_reward) + "\n")
+            thefile.close()
         
         self.total_reward = 0
         if len(self.data) > 1000:

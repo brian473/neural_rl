@@ -35,11 +35,11 @@ class NeuralQLearnDataset:
         self.actions = []
         self.rewards = []
         self.cnn = cnn
-        self.train_mini_batches = False
+        self.train_mini_batches = True
         
         if self.profile:
             os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-            self.profmode = theano.ProfileMode(optimizer='fast_run', 
+            self.profmode = theano.ProfileMode(optimizer='fast_run',
                                 linker=theano.gof.OpWiseCLinker())
         
         self.setup_training()
@@ -150,8 +150,8 @@ class NeuralQLearnDataset:
             next_state[(8400 * 3):] = self.data[data_num - 1].astype('float32')
             
             #put values into lists
-            states[i] = state
-            next_states[i] = state
+            states[i] = state.astype('float32')
+            next_states[i] = state.astype('float32')
             actions.append(self.actions[data_num])
             rewards.append(self.rewards[data_num])
         
@@ -163,12 +163,10 @@ class NeuralQLearnDataset:
         
         #create theano tensors
         states = theano.shared(states, name='input', borrow=True)
-        states = T.reshape(states, (self.batch_size, 80, 105, 4))
-        states = T.cast(states, dtype='floatX')
+        states = states.reshape((self.batch_size, 80, 105, 4))
         
         next_states = theano.shared(next_states, name='input_max', borrow=True)
-        next_states = T.reshape(next_states, (self.batch_size, 80, 105, 4))
-        next_states = T.cast(next_states, dtype='floatX')
+        next_states = next_states.reshape((self.batch_size, 80, 105, 4))
         
         #get output predictions from nn using the states batch
         q_sa_list = self.cnn.fprop(states).eval()
