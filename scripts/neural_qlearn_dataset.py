@@ -11,6 +11,7 @@ import copy
 import os
 from itertools import izip
 from pylearn2.utils.data_specs import DataSpecsMapping
+import Image
 
 from random import Random
 
@@ -18,15 +19,15 @@ class NeuralQLearnDataset:
     randGenerator=Random()
 
 
-    def __init__(self, cnn, batch_size, history_size = 100000, \
+    def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 100000, \
                     gamma = .9, alpha = .8, learning_rate = .5):
         """
         Sets up variables for later use.
         
         """
-        self.profile = False
         self.print_cost = False
-        self.batch_size = batch_size
+        self.mini_batch_size = mini_batch_size
+        self.num_mini_batches = num_mini_batches
         self.learning_rate = learning_rate
         self.history_size = history_size
         self.gamma = gamma
@@ -35,12 +36,7 @@ class NeuralQLearnDataset:
         self.actions = []
         self.rewards = []
         self.cnn = cnn
-        self.train_mini_batches = True
-        
-        if self.profile:
-            os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
-            self.profmode = theano.ProfileMode(optimizer='fast_run',
-                                linker=theano.gof.OpWiseCLinker())
+        self.image_shape = (4, 80, 80, self.mini_batch_size * self.num_mini_batches)
         
         self.setup_training()
         
@@ -49,9 +45,7 @@ class NeuralQLearnDataset:
         Sets up training function.
         """
         
-        training_batch_size = self.batch_size
-        if self.train_mini_batches:
-            training_batch_size = 32
+        training_batch_size = self.mini_batch_size
         
         cost = self.cnn.get_default_cost()
         
@@ -82,11 +76,7 @@ class NeuralQLearnDataset:
         updates.update(dict(safe_zip(params, [param - self.learning_rate * 
                                 gradients[param] for param in params])))
         
-        if self.profile:
-            self.training = theano.function(theano_args, updates=updates, 
-                                        on_unused_input='ignore', mode=self.profmode)
-        else:
-            self.training = theano.function(theano_args, updates=updates, 
+        self.training = theano.function(theano_args, updates=updates, 
                                         on_unused_input='ignore')
                                         
         self.cost_function = theano.function(theano_args, cost)
@@ -97,7 +87,12 @@ class NeuralQLearnDataset:
         Used for adding data to the dataset.
 
         """
-        self.data.append(data.astype('uint8'))
+        image = Image.fromarray(data.reshape((80, 105)))
+        image = image.resize((80, 80))
+        
+        image = np.asarray(image)
+        
+        self.data.append(image.astype('uint8'))
         self.actions.append(action)
         self.rewards.append(reward)
 
@@ -121,37 +116,25 @@ class NeuralQLearnDataset:
         """
         
         formatted_data = []
-        states = state = np.empty((self.batch_size, 33600), dtype='float32')
-        next_states = state = np.empty((self.batch_size, 33600), dtype='float32')
+        states = state = np.empty((self.mini_batch_size * 
+                        self.num_mini_batches, 25600), dtype='float32')
+        next_states = state = np.empty((self.mini_batch_size * 
+                        self.num_mini_batches, 25600), dtype='float32')
         actions = []
         rewards = []
         
         #create training batch
-        for i in range(self.batch_size):
+        for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history
             data_num = self.randGenerator.randint(3, len(self.data) - 2)
             
-            state = np.empty(33600)
-            next_state = np.empty(33600)
+            state = self.get_state(data_num)
             
-            #combine four states for training
-            state[:8400] = self.data[data_num - 3].astype('float32')
-            state[8400:(8400 * 2)] = self.data[ 
-                                        data_num - 2].astype('float32')
-            state[(8400 * 2):(8400 * 3)] = self.data[ 
-                                        data_num - 1].astype('float32')
-            state[(8400 * 3):] = self.data[data_num].astype('float32')
-            
-            #combine the next four states for Q(s, a)'
-            next_state[:8400] = self.data[data_num - 4].astype('float32')
-            next_state[8400:(8400 * 2)] = self.data[data_num - 3].astype('float32')
-            next_state[(8400 * 2):(8400 * 3)] = self.data[ 
-                                        data_num - 2].astype('float32')
-            next_state[(8400 * 3):] = self.data[data_num - 1].astype('float32')
+            next_state = self.get_state(data_num + 1)
             
             #put values into lists
-            states[i] = state.astype('float32')
-            next_states[i] = state.astype('float32')
+            states[i] = state
+            next_states[i] = next_state
             actions.append(self.actions[data_num])
             rewards.append(self.rewards[data_num])
         
@@ -163,10 +146,10 @@ class NeuralQLearnDataset:
         
         #create theano tensors
         states = theano.shared(states, name='input', borrow=True)
-        states = states.reshape((self.batch_size, 80, 105, 4))
+        states = states.reshape(self.image_shape)
         
         next_states = theano.shared(next_states, name='input_max', borrow=True)
-        next_states = next_states.reshape((self.batch_size, 80, 105, 4))
+        next_states = next_states.reshape(self.image_shape)
         
         #get output predictions from nn using the states batch
         q_sa_list = self.cnn.fprop(states).eval()
@@ -174,54 +157,55 @@ class NeuralQLearnDataset:
         #get max of Q(s, a)' for next state batch
         q_sa_prime_list = self.cnn.fprop(next_states).eval()
         
-        for i in range(self.batch_size):
+        for i in range(self.mini_batch_size * self.num_mini_batches):
             #perform qlearning update to get target value Q(s, a)
-            next_state_max = max(q_sa_prime_list[i])
-            q_sa_list[i][actions[i]] = q_sa_list[i][actions[i]] + (self.alpha * \
-                            (rewards[i] + (self.gamma * next_state_max) - \
-                            q_sa_list[i][actions[i]]))
-            
-        #perform SGD update
-        num_mini_batches = self.batch_size / 32
+            next_state_max = np.max(q_sa_prime_list[i])
+            q_sa_list[i][actions[i]] = rewards[i] + (self.gamma * next_state_max)
         
         if self.print_cost:
-            print self.cost_function(states_np_array.reshape((self.batch_size, 80, 105, 4)), q_sa_list)
-        
-        if self.train_mini_batches:
-            for i in range(num_mini_batches - 1):
-                batch_q_sa = q_sa_list[i * num_mini_batches : 32 + i * \
-                                                    num_mini_batches]
-                batch_data = states_np_array[i * num_mini_batches : 32 + i * \
-                                                    num_mini_batches]
-                                                    
-                batch_data = batch_data.reshape((32, 80, 105, 4))
+            print self.cost_function(states_np_array.reshape(self.image_shape), 
+                                                              q_sa_list)
 
-                self.training(batch_data, batch_q_sa)
-        else:
-            states_np_array = states_np_array.reshape((self.batch_size, 80, 105, 4))
-            self.training(states_np_array, q_sa_list)
-            
-        if self.profile:
-            self.profmode.print_summary()
+        #perform SGD update with minibatches
+        for i in range(self.num_mini_batches - 1):
+            batch_q_sa = q_sa_list[i * self.mini_batch_size : 
+                                        (1 + i) * 
+                                        self.mini_batch_size]
+            batch_data = states_np_array[i * self.mini_batch_size : 
+                                            (1 + i) * 
+                                            self.mini_batch_size]
+                                                
+            batch_data = batch_data.reshape((4, 80, 80, self.mini_batch_size))
+
+            self.training(batch_data, batch_q_sa)
         
         if self.print_cost:
-            print self.cost_function(states_np_array.reshape((self.batch_size, 80, 105, 4)), q_sa_list)
+            print self.cost_function(states_np_array.reshape(self.image_shape), 
+                                                                q_sa_list)
         
+
+    def get_state(self, num):
+        #combine last four states
+        state = np.empty(25600)
+            
+        state[:6400] = self.data[num - 3].reshape(6400).astype('float32')
+        state[6400:(6400 * 2)] = self.data[num - 2].reshape(6400).astype('float32')
+        state[(6400 * 2):(6400 * 3)] = self.data[num - 1].reshape(6400).astype('float32')
+        state[(6400 * 3):] = self.data[num].reshape(6400).astype('float32')
+        
+        return state
+        
+
     def get_cur_state(self):
         #combine last four states
-        state = np.empty(33600)
-            
-        state[:8400] = self.data[len(self.data) - 1].astype('float32')
-        state[8400:(8400 * 2)] = self.data[len(self.data) - 2].astype('float32')
-        state[(8400 * 2):(8400 * 3)] = self.data[len(self.data) - 3].astype('float32')
-        state[(8400 * 3):] = self.data[len(self.data) - 4].astype('float32')
+        state = self.get_state(len(self.data) - 1)
         
         #divide by 256 to make values < 1 for neural net
         state /= 256.0
         
         #create theano variables
         state = theano.shared(state, name='input')
-        state = T.reshape(state, (1, 80, 105, 4))
+        state = T.reshape(state, (4, 80, 80, 1))
         state = T.cast(state, dtype='floatX')
         return state
         

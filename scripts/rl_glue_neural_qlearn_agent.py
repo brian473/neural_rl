@@ -39,11 +39,13 @@ from rlglue.types import Observation
 from rlglue.utils import TaskSpecVRLGLUE3
 from pylearn2.training_algorithms import sgd
 from pylearn2.models import mlp
+from pylearn2.models import maxout
 from pylearn2.space import Conv2DSpace
 from pylearn2.termination_criteria import EpochCounter
 import neural_qlearn_dataset as nqd
 import time
 import theano.tensor as T
+import temp_mlp
 
 from random import Random
 
@@ -68,10 +70,11 @@ class NeuralQLearnAgent(Agent):
         self.show_ale = False
         self.saving = True
         self.total_reward = 0
-        self.batch_size = 256 #must be a multiple of 32
+        self.mini_batch_size = 128
+        self.num_mini_batches = 12
         self.episode_count = 0
         learning_rate = .0005
-        self.testing_policy = True
+        self.testing_policy = False
         self.policy_test_file_name = "results"
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -105,13 +108,13 @@ class NeuralQLearnAgent(Agent):
             self.cnn = cPickle.load(thefile)
         else:
         
-            self.first_conv_layer = mlp.ConvRectifiedLinear(16, (8, 8), (1, 1), 
+            self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
                             (1, 1), "first conv layer", irange=.1, 
-                                            kernel_stride=(1, 1))
+                                            kernel_stride=(4, 4), min_zero=True)
                                             
-            self.second_conv_layer = mlp.ConvRectifiedLinear(32, (4, 4), 
+            self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
                             (1, 1), (1, 1), "second conv layer", irange=.1, 
-                                            kernel_stride=(1, 1))
+                                            kernel_stride=(2, 2), min_zero=True)
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
                             layer_name="rectified layer", irange=.1)
@@ -122,17 +125,19 @@ class NeuralQLearnAgent(Agent):
             layers = [self.first_conv_layer, self.second_conv_layer, 
                             self.rect_layer, self.output_layer]
 
-            self.cnn = mlp.MLP(layers, input_space = Conv2DSpace((80, 105), 
-                            num_channels=4), batch_size=self.batch_size)
+            self.cnn = mlp.MLP(layers, input_space = Conv2DSpace((80, 80), 
+                                    num_channels=4, axes=('c', 0, 1, 'b')), 
+                                    batch_size=self.mini_batch_size)
 
-        self.data = nqd.NeuralQLearnDataset(self.cnn, batch_size = 
-                        self.batch_size, learning_rate=learning_rate)
-                        
+
+        self.data = nqd.NeuralQLearnDataset(self.cnn, mini_batch_size = self.mini_batch_size, 
+                                            num_mini_batches = self.num_mini_batches, 
+                                            learning_rate=learning_rate)
 
         #Create appropriate RL-Glue objects for storing these. 
         self.last_action=Action()
         self.last_observation=Observation()
-        
+
         if self.saving:
             thefile = open(self.policy_test_file_name, "w")
             thefile.write("Policy test results\n")
@@ -248,11 +253,13 @@ class NeuralQLearnAgent(Agent):
 		
         if reward < 0:
             reward = -1
+            
+        
         
         self.data.add(self.last_observation.intArray, \
                         self.last_action.intArray[0], reward)
         
-        if len(self.data) > 100 and not self.testing_policy:
+        if len(self.data) > 10000 and not self.testing_policy:
             t = time.time()
             self.data.train()
             print "took ", time.time() - t, "s"
@@ -310,7 +317,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.last_action.intArray[0], reward)
         
-        if len(self.data) > self.batch_size * 5:
+        if len(self.data) > 10000:
             self.data.train()
             
         #self.data.reset_data()
