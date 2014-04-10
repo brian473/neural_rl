@@ -65,23 +65,24 @@ class NeuralQLearnAgent(Agent):
                                       is decoded using 
                                       TaskSpecVRLGLUE3.TaskSpecParser
         """
-
+        self.start_time = time.time()
         self.image = None
         self.show_ale = False
-        self.saving = True
         self.total_reward = 0
-        self.mini_batch_size = 128
-        self.num_mini_batches = 12
-        self.episode_count = 0
-        learning_rate = .0005
-        self.testing_policy = False
-        self.policy_test_file_name = "results"
+        self.mini_batch_size = 32
+        self.num_mini_batches = 48
+        self.qvalue_sum = 0
+        self.qvalue_count = 0
+        learning_rate = .05
+        self.policy_test_file_name = "results.csv"
         load_file = False
         load_file_name = "cnnparams.pkl"
         self.save_file_name = "cnnparams.pkl"
+        self.counter = 0
+        self.cur_action = 0
         
         #starting value for epsilon-greedy
-        self.epsilon = 1
+        self.epsilon = .95
 
         TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(task_spec_string)
         if TaskSpec.valid:
@@ -97,6 +98,7 @@ class NeuralQLearnAgent(Agent):
                 " expecting max action to be a number not a special value"
             self.num_actions=TaskSpec.getIntActions()[0][1]+1
 
+        self.num_actions = 3
         
         self.int_states = len(TaskSpec.getIntObservations()) > 0
 
@@ -138,10 +140,9 @@ class NeuralQLearnAgent(Agent):
         self.last_action=Action()
         self.last_observation=Observation()
 
-        if self.saving:
-            thefile = open(self.policy_test_file_name, "w")
-            thefile.write("Policy test results\n")
-            thefile.close()
+        thefile = open(self.policy_test_file_name, "w")
+        thefile.write("Reward, Average predicted Q value, Time finished - start time\n")
+        thefile.close()
 
 
 
@@ -175,25 +176,53 @@ class NeuralQLearnAgent(Agent):
         Uses epsilon-greedy.
         """
         #reduce epsilon linearly to .1 after 900,000 steps
+        if self.counter != 0:
+            self.counter += 1
+            return self.cur_action
         epsilon = self.epsilon
         
-        if self.testing_policy:
-            epsilon = .01
-        else:
-            self.epsilon -= .000001
-            if (self.epsilon < .1):
-                self.epsilon = .1
+        if len(self.data) > 10000:
+            self.epsilon -= .000001 * self.num_mini_batches
+            if (self.epsilon < .05):
+                self.epsilon = .05
                 
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
-            return self.randGenerator.randint(0,self.num_actions-1)
+            val = self.randGenerator.randint(0,self.num_actions-1)
+        else:
+            state = self.data.get_cur_state()
             
-        state = self.data.get_cur_state()
+            qvalues = self.cnn.fprop(state).eval()
+             
+            qvalues = qvalues.tolist()
+            
+            val = qvalues[0].index(max(qvalues[0]))
+            
+            self.qvalue_sum += max(qvalues[0])
+            self.qvalue_count += 1
         
-        qvalues = self.cnn.fprop(state).eval()
+        val = self.get_action_val(val)
         
-        qvalues = qvalues.tolist()
+        if self.counter == 3:
+            self.counter = 0
+            self.cur_action = val
+
+        return val
         
-        return qvalues[0].index(max(qvalues[0]))
+    def get_action_val(self, val):
+        if val == 0:
+            return 1
+        elif val == 1:
+            return 7
+        elif val == 2:
+            return 8
+            
+    def get_val_action(self, val):
+        if val == 1:
+            return 0
+        elif val == 7:
+            return 1
+        elif val == 8:
+            return 2
 
     def _show_ale_color(self):
         """
@@ -257,12 +286,10 @@ class NeuralQLearnAgent(Agent):
         
         
         self.data.add(self.last_observation.intArray, \
-                        self.last_action.intArray[0], reward)
+                        self.get_val_action(self.last_action.intArray[0]), reward)
         
-        if len(self.data) > 10000 and not self.testing_policy:
-            t = time.time()
+        if len(self.data) > 10000:
             self.data.train()
-            print "took ", time.time() - t, "s"
         
         this_int_action = self.get_action()
         return_action = Action()
@@ -289,24 +316,19 @@ class NeuralQLearnAgent(Agent):
         """
         self.total_reward += reward
         
-        #print the reward for this policy
-        if self.testing_policy:
+        if len(self.data) > 10000:
+            #print the reward for this policy
             thefile = open(self.policy_test_file_name, "a")
-            thefile.write(str(self.total_reward) + "\n")
+            
+            thefile.write(str(self.total_reward) +  ", " +  
+                            str(self.qvalue_sum / self.qvalue_count) + ", "
+                            + str(time.time() - self.start_time) + "\n")
             thefile.close()
         
         self.total_reward = 0
-        if len(self.data) > 1000:
-            if self.episode_count == 1 and not self.testing_policy and self.saving:
-                self.testing_policy = True
-            elif self.testing_policy:
-                self.episode_count = 0
-                self.testing_policy = False
-                if self.saving:
-                    self.save_params(self.save_file_name)
-            else:
-                self.episode_count+=1
-            
+        self.qvalue_sum = 0
+        self.qvalue_count = 0
+        self.save_params(self.save_file_name)
         
         if reward > 0:
             reward = 1
@@ -315,7 +337,7 @@ class NeuralQLearnAgent(Agent):
             reward = -1
         
         self.data.add(self.last_observation.intArray, \
-                        self.last_action.intArray[0], reward)
+                        self.get_val_action(self.last_action.intArray[0]), reward)
         
         if len(self.data) > 10000:
             self.data.train()
@@ -347,7 +369,7 @@ class NeuralQLearnAgent(Agent):
             the_file = open(file_name, "w")
             all_data = (self.cnn.get_params())
             print "PICKLING: " + file_name
-            cPickle.dump(all_data, the_file, -1)
+            #cPickle.dump(all_data, the_file, -1)
             #print "Simulated at a rate of {}/s".format(len(self.rewards) / 
             #                                           total_time)
             return "File saved successfully"

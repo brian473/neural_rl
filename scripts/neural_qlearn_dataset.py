@@ -12,6 +12,8 @@ import os
 from itertools import izip
 from pylearn2.utils.data_specs import DataSpecsMapping
 import Image
+import matplotlib.pyplot as plt
+import time
 
 from random import Random
 
@@ -35,6 +37,8 @@ class NeuralQLearnDataset:
         self.data = []
         self.actions = []
         self.rewards = []
+        self.counter = 0
+        self.action = 0
         self.cnn = cnn
         self.image_shape = (4, 80, 80, self.mini_batch_size * self.num_mini_batches)
         
@@ -126,17 +130,23 @@ class NeuralQLearnDataset:
         #create training batch
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history
-            data_num = self.randGenerator.randint(3, len(self.data) - 2)
+            data_num = self.randGenerator.randint(3, len(self.data) - 5)
             
             state = self.get_state(data_num)
             
-            next_state = self.get_state(data_num + 1)
+            next_state = self.get_state(data_num + 4)
             
             #put values into lists
             states[i] = state
             next_states[i] = next_state
             actions.append(self.actions[data_num])
-            rewards.append(self.rewards[data_num])
+            
+            reward = 0
+            for i in range(4):
+                if self.rewards[i + data_num] != 0:
+                    reward = self.rewards[i + data_num]
+            
+            rewards.append(reward)
         
         #normalize values
         states /= 256.0
@@ -185,7 +195,7 @@ class NeuralQLearnDataset:
         
 
     def get_state(self, num):
-        #combine last four states
+        #combine four states at num
         state = np.empty(25600)
             
         state[:6400] = self.data[num - 3].reshape(6400).astype('float32')
@@ -194,7 +204,6 @@ class NeuralQLearnDataset:
         state[(6400 * 3):] = self.data[num].reshape(6400).astype('float32')
         
         return state
-        
 
     def get_cur_state(self):
         #combine last four states
