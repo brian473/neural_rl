@@ -22,7 +22,7 @@ class NeuralQLearnDataset:
 
 
     def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 100000, \
-                    gamma = .9, alpha = .8, learning_rate = .5):
+                    gamma = .9, learning_rate = .5):
         """
         Sets up variables for later use.
         
@@ -33,7 +33,6 @@ class NeuralQLearnDataset:
         self.learning_rate = learning_rate
         self.history_size = history_size
         self.gamma = gamma
-        self.alpha = alpha
         self.data = []
         self.actions = []
         self.rewards = []
@@ -68,7 +67,11 @@ class NeuralQLearnDataset:
         
         y_hat = self.cnn.fprop(theano_args[0])
         
+        self.fprop_func = theano.function([theano_args[0]], y_hat)
+        
         cost = self.cnn.cost(theano_args[1], y_hat)
+        
+        lr_scalers = self.cnn.get_lr_scalers()
         
         params = list(self.cnn.get_params())
         grads = T.grad(cost, params, disconnected_inputs='ignore')
@@ -78,7 +81,7 @@ class NeuralQLearnDataset:
         updates = OrderedDict()
         
         updates.update(dict(safe_zip(params, [param - self.learning_rate * 
-                                gradients[param] for param in params])))
+                                gradients[param] * lr_scalers.get(param, 1.) for param in params])))
         
         self.training = theano.function(theano_args, updates=updates, 
                                         on_unused_input='ignore')
@@ -132,19 +135,15 @@ class NeuralQLearnDataset:
             #select a random point in history
             data_num = self.randGenerator.randint(3, len(self.data) - 5)
             
-            state = self.get_state(data_num)
-            
-            next_state = self.get_state(data_num + 4)
-            
             #put values into lists
-            states[i] = state
-            next_states[i] = next_state
+            states[i] = self.get_state(data_num)
+            next_states[i] = self.get_state(data_num + 4)
             actions.append(self.actions[data_num])
             
             reward = 0
             for i in range(4):
-                if self.rewards[i + data_num] != 0:
-                    reward = self.rewards[i + data_num]
+                if self.rewards[i + 1 + data_num] != 0:
+                    reward = self.rewards[i + 1 + data_num]
             
             rewards.append(reward)
         
@@ -152,20 +151,13 @@ class NeuralQLearnDataset:
         states /= 256.0
         next_states /= 256.0
         
-        states_np_array = states
-        
-        #create theano tensors
-        states = theano.shared(states, name='input', borrow=True)
-        states = states.reshape(self.image_shape)
-        
-        next_states = theano.shared(next_states, name='input_max', borrow=True)
-        next_states = next_states.reshape(self.image_shape)
-        
         #get output predictions from nn using the states batch
-        q_sa_list = self.cnn.fprop(states).eval()
+        q_sa_list = self.fprop_func(states.reshape(self.image_shape))
         
         #get max of Q(s, a)' for next state batch
-        q_sa_prime_list = self.cnn.fprop(next_states).eval()
+        q_sa_prime_list = self.fprop_func(next_states.reshape(self.image_shape))
+        
+        print np.mean(q_sa_list)
         
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #perform qlearning update to get target value Q(s, a)
@@ -177,11 +169,11 @@ class NeuralQLearnDataset:
                                                               q_sa_list)
 
         #perform SGD update with minibatches
-        for i in range(self.num_mini_batches - 1):
+        for i in range(self.num_mini_batches):
             batch_q_sa = q_sa_list[i * self.mini_batch_size : 
                                         (1 + i) * 
                                         self.mini_batch_size]
-            batch_data = states_np_array[i * self.mini_batch_size : 
+            batch_data = states[i * self.mini_batch_size : 
                                             (1 + i) * 
                                             self.mini_batch_size]
                                                 
@@ -190,8 +182,8 @@ class NeuralQLearnDataset:
             self.training(batch_data, batch_q_sa)
         
         if self.print_cost:
-            print self.cost_function(states_np_array.reshape(self.image_shape), 
-                                                                q_sa_list)
+            print self.cost_function(states.reshape(self.image_shape), 
+                                                            q_sa_list)
         
 
     def get_state(self, num):

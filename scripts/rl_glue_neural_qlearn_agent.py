@@ -70,10 +70,11 @@ class NeuralQLearnAgent(Agent):
         self.show_ale = False
         self.total_reward = 0
         self.mini_batch_size = 32
-        self.num_mini_batches = 48
+        self.num_mini_batches = 1
+        self.frame_count = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .05
+        learning_rate = .001
         self.policy_test_file_name = "results.csv"
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -82,7 +83,7 @@ class NeuralQLearnAgent(Agent):
         self.cur_action = 0
         
         #starting value for epsilon-greedy
-        self.epsilon = .95
+        self.epsilon = .99
 
         TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(task_spec_string)
         if TaskSpec.valid:
@@ -111,18 +112,18 @@ class NeuralQLearnAgent(Agent):
         else:
         
             self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
-                            (1, 1), "first conv layer", irange=.1, 
+                            (1, 1), "first conv layer", irange=.01, 
                                             kernel_stride=(4, 4), min_zero=True)
                                             
             self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
-                            (1, 1), (1, 1), "second conv layer", irange=.1, 
+                            (1, 1), (1, 1), "second conv layer", irange=.01, 
                                             kernel_stride=(2, 2), min_zero=True)
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
-                            layer_name="rectified layer", irange=.1)
+                            layer_name="rectified layer", irange=.01)
                             
             self.output_layer = mlp.Linear(self.num_actions, "output layer", 
-                            irange=.1)
+                            irange=.01)
 
             layers = [self.first_conv_layer, self.second_conv_layer, 
                             self.rect_layer, self.output_layer]
@@ -141,7 +142,7 @@ class NeuralQLearnAgent(Agent):
         self.last_observation=Observation()
 
         thefile = open(self.policy_test_file_name, "w")
-        thefile.write("Reward, Average predicted Q value, Time finished - start time\n")
+        thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds\n")
         thefile.close()
 
 
@@ -181,7 +182,7 @@ class NeuralQLearnAgent(Agent):
             return self.cur_action
         epsilon = self.epsilon
         
-        if len(self.data) > 10000:
+        if len(self.data) > 1000:
             self.epsilon -= .000001 * self.num_mini_batches
             if (self.epsilon < .05):
                 self.epsilon = .05
@@ -189,9 +190,9 @@ class NeuralQLearnAgent(Agent):
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             val = self.randGenerator.randint(0,self.num_actions-1)
         else:
-            state = self.data.get_cur_state()
+            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((4, 80, 80, 1))
             
-            qvalues = self.cnn.fprop(state).eval()
+            qvalues = self.data.fprop_func(state)
              
             qvalues = qvalues.tolist()
             
@@ -276,6 +277,8 @@ class NeuralQLearnAgent(Agent):
         
         self.total_reward += reward
         
+        self.frame_count += 1
+        
         #set reward to be either -1, 0, or 1 as described in atari paper
         if reward > 0:
             reward = 1
@@ -288,7 +291,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), reward)
         
-        if len(self.data) > 10000:
+        if len(self.data) > 1000:
             self.data.train()
         
         this_int_action = self.get_action()
@@ -316,18 +319,23 @@ class NeuralQLearnAgent(Agent):
         """
         self.total_reward += reward
         
-        if len(self.data) > 10000:
+        if len(self.data) > 1000:
             #print the reward for this policy
             thefile = open(self.policy_test_file_name, "a")
             
-            thefile.write(str(self.total_reward) +  ", " +  
-                            str(self.qvalue_sum / self.qvalue_count) + ", "
-                            + str(time.time() - self.start_time) + "\n")
+            thefile.write(str(self.total_reward) +  ", ")
+            if self.qvalue_count == 0:
+                thefile.write("No predictions made, ")
+            else:
+                thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
+            thefile.write(str(self.frame_count) + ", ")
+            thefile.write(str(time.time() - self.start_time) + "\n")
             thefile.close()
         
         self.total_reward = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
+        self.frame_count = 0
         self.save_params(self.save_file_name)
         
         if reward > 0:
@@ -339,7 +347,7 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), reward)
         
-        if len(self.data) > 10000:
+        if len(self.data) > 1000:
             self.data.train()
             
         #self.data.reset_data()
