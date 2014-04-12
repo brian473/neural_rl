@@ -74,7 +74,7 @@ class NeuralQLearnAgent(Agent):
         self.frame_count = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .001
+        learning_rate = .05
         self.policy_test_file_name = "results.csv"
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -289,7 +289,8 @@ class NeuralQLearnAgent(Agent):
         
         
         self.data.add(self.last_observation.intArray, \
-                        self.get_val_action(self.last_action.intArray[0]), reward)
+                        self.get_val_action(self.last_action.intArray[0]), 
+                        reward, False)
         
         if len(self.data) > 1000:
             self.data.train()
@@ -345,7 +346,8 @@ class NeuralQLearnAgent(Agent):
             reward = -1
         
         self.data.add(self.last_observation.intArray, \
-                        self.get_val_action(self.last_action.intArray[0]), reward)
+                        self.get_val_action(self.last_action.intArray[0]), 
+                        reward, True)
         
         if len(self.data) > 1000:
             self.data.train()

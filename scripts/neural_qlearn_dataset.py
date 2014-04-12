@@ -36,6 +36,7 @@ class NeuralQLearnDataset:
         self.data = []
         self.actions = []
         self.rewards = []
+        self.terminal = []
         self.counter = 0
         self.action = 0
         self.cnn = cnn
@@ -89,7 +90,7 @@ class NeuralQLearnDataset:
         self.cost_function = theano.function(theano_args, cost)
         
 
-    def add(self, data, action, reward):
+    def add(self, data, action, reward, terminal):
         """
         Used for adding data to the dataset.
 
@@ -102,11 +103,13 @@ class NeuralQLearnDataset:
         self.data.append(image.astype('uint8'))
         self.actions.append(action)
         self.rewards.append(reward)
+        self.terminal.append(terminal)
 
         if len(self.data) > self.history_size:
             self.data.pop(0)
             self.actions.pop(0)
             self.rewards.pop(0)
+            self.terminal.pop(0)
 
     def has_targets(self):
         return True
@@ -129,11 +132,18 @@ class NeuralQLearnDataset:
                         self.num_mini_batches, 25600), dtype='float32')
         actions = []
         rewards = []
+        terminal_state = False
         
         #create training batch
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history
             data_num = self.randGenerator.randint(3, len(self.data) - 5)
+            
+            for i in range(0, 8):
+                if self.terminal[i - 3 + data_num]:
+                    terminal_state = True
+                    data_num -= 7 - i
+                    
             
             #put values into lists
             states[i] = self.get_state(data_num)
@@ -158,11 +168,15 @@ class NeuralQLearnDataset:
         q_sa_prime_list = self.fprop_func(next_states.reshape(self.image_shape))
         
         print np.mean(q_sa_list)
-        
-        for i in range(self.mini_batch_size * self.num_mini_batches):
-            #perform qlearning update to get target value Q(s, a)
-            next_state_max = np.max(q_sa_prime_list[i])
-            q_sa_list[i][actions[i]] = rewards[i] + (self.gamma * next_state_max)
+        if not terminal_state:
+            for i in range(self.mini_batch_size * self.num_mini_batches):
+                #perform qlearning update to get target value Q(s, a)
+                next_state_max = np.max(q_sa_prime_list[i])
+                q_sa_list[i][actions[i]] = rewards[i] + (self.gamma * next_state_max)
+        else:
+            for i in range(self.mini_batch_size * self.num_mini_batches):
+                #in terminal state, target value is reward
+                q_sa_list[i][actions[i]] = rewards[i]
         
         if self.print_cost:
             print self.cost_function(states_np_array.reshape(self.image_shape), 
