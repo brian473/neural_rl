@@ -74,7 +74,10 @@ class NeuralQLearnAgent(Agent):
         self.frame_count = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .05
+        learning_rate = .00005
+        self.testing_policy = False
+        self.epoch_counter = 0
+        self.epochs_until_test = 5
         self.policy_test_file_name = "results.csv"
         load_file = False
         load_file_name = "cnnparams.pkl"
@@ -83,7 +86,7 @@ class NeuralQLearnAgent(Agent):
         self.cur_action = 0
         
         #starting value for epsilon-greedy
-        self.epsilon = .99
+        self.epsilon = 1
 
         TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(task_spec_string)
         if TaskSpec.valid:
@@ -180,12 +183,16 @@ class NeuralQLearnAgent(Agent):
         if self.counter != 0:
             self.counter += 1
             return self.cur_action
-        epsilon = self.epsilon
-        
-        if len(self.data) > 1000:
-            self.epsilon -= .000001 * self.num_mini_batches
-            if (self.epsilon < .05):
-                self.epsilon = .05
+            
+        if self.testing_policy:
+            epsilon = .05
+        else:
+            epsilon = self.epsilon
+            
+            if len(self.data) > 1000:
+                self.epsilon -= .000001 * self.num_mini_batches
+                if (self.epsilon < .1):
+                    self.epsilon = .1
                 
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             val = self.randGenerator.randint(0,self.num_actions-1)
@@ -287,12 +294,12 @@ class NeuralQLearnAgent(Agent):
             reward = -1
             
         
-        
-        self.data.add(self.last_observation.intArray, \
+        if not self.testing_policy:
+            self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, False)
         
-        if len(self.data) > 1000:
+        if len(self.data) > 1000 and not self.testing_policy:
             self.data.train()
         
         this_int_action = self.get_action()
@@ -320,15 +327,12 @@ class NeuralQLearnAgent(Agent):
         """
         self.total_reward += reward
         
-        if len(self.data) > 1000:
+        if self.testing_policy :
             #print the reward for this policy
             thefile = open(self.policy_test_file_name, "a")
             
             thefile.write(str(self.total_reward) +  ", ")
-            if self.qvalue_count == 0:
-                thefile.write("No predictions made, ")
-            else:
-                thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
+            thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
             thefile.write(str(self.frame_count) + ", ")
             thefile.write(str(time.time() - self.start_time) + "\n")
             thefile.close()
@@ -345,12 +349,18 @@ class NeuralQLearnAgent(Agent):
         if reward < 0:
             reward = -1
         
-        self.data.add(self.last_observation.intArray, \
+        if not self.testing_policy:
+            self.data.add(self.last_observation.intArray, 
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, True)
-        
-        if len(self.data) > 1000:
-            self.data.train()
+                        
+        if self.testing_policy:
+            self.epoch_counter = 0
+            self.testing_policy = False
+        else:
+            self.epoch_counter += 1
+            if self.epoch_counter == self.epochs_until_test:
+                self.testing_policy = True
             
         #self.data.reset_data()
         

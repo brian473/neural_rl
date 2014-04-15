@@ -21,7 +21,7 @@ class NeuralQLearnDataset:
     randGenerator=Random()
 
 
-    def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 100000, \
+    def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 1000000, \
                     gamma = .9, learning_rate = .5):
         """
         Sets up variables for later use.
@@ -82,7 +82,8 @@ class NeuralQLearnDataset:
         updates = OrderedDict()
         
         updates.update(dict(safe_zip(params, [param - self.learning_rate * 
-                                gradients[param] * lr_scalers.get(param, 1.) for param in params])))
+                                gradients[param] * lr_scalers.get(param, 1.) 
+                                                    for param in params])))
         
         self.training = theano.function(theano_args, updates=updates, 
                                         on_unused_input='ignore')
@@ -118,17 +119,10 @@ class NeuralQLearnDataset:
         return len(self.data)
 
     def train(self):
-        """
-        Creates 80x105x4 tensors and trains for one epoch with them. 
-        The four channels contain subsequent images. Performs QLearning 
-        update step for the target, using the most recent image's action 
-        and reward values.
-        """
-        
         formatted_data = []
-        states = state = np.empty((self.mini_batch_size * 
+        states = np.empty((self.mini_batch_size * 
                         self.num_mini_batches, 25600), dtype='float32')
-        next_states = state = np.empty((self.mini_batch_size * 
+        next_states = np.empty((self.mini_batch_size * 
                         self.num_mini_batches, 25600), dtype='float32')
         actions = []
         rewards = []
@@ -137,23 +131,31 @@ class NeuralQLearnDataset:
         #create training batch
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history
-            data_num = self.randGenerator.randint(3, len(self.data) - 5)
+            while True:
+                data_num = self.randGenerator.randint(8, len(self.data) - 5)
+                if data_num % 4 == 0:
+                    break
             
-            for i in range(0, 8):
-                if self.terminal[i - 3 + data_num]:
+            #if the state is terminal, subtract 4
+            for i in range(4):
+                if self.terminal[data_num - i]:
                     terminal_state = True
-                    data_num -= 7 - i
+                    data_num -= 4
                     
+            #determine if the next state is terminal
+            for i in range(4):
+                if self.terminal[data_num + 4 - i]:
+                    terminal_state = True
             
             #put values into lists
             states[i] = self.get_state(data_num)
             next_states[i] = self.get_state(data_num + 4)
-            actions.append(self.actions[data_num])
+            actions.append(self.actions[data_num + 1])
             
             reward = 0
             for i in range(4):
                 if self.rewards[i + 1 + data_num] != 0:
-                    reward = self.rewards[i + 1 + data_num]
+                    reward += self.rewards[i + 1 + data_num]
             
             rewards.append(reward)
         
