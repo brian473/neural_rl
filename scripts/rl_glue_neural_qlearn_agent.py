@@ -179,13 +179,12 @@ class NeuralQLearnAgent(Agent):
         Get predictions on the last state to get the next action from qvalues.
         Uses epsilon-greedy.
         """
-        #reduce epsilon linearly to .1 after 900,000 steps
-        if self.counter != 0:
-            self.counter += 1
+        self.counter += 1
+        if self.counter != 4:
             return self.cur_action
             
         if self.testing_policy:
-            epsilon = .000001
+            epsilon = .05
         else:
             epsilon = self.epsilon
             
@@ -210,7 +209,7 @@ class NeuralQLearnAgent(Agent):
         
         val = self.get_action_val(val)
         
-        if self.counter == 3:
+        if self.counter == 4:
             self.counter = 0
             self.cur_action = val
 
@@ -299,9 +298,7 @@ class NeuralQLearnAgent(Agent):
                         reward, False)
         
         if len(self.data) > 1000 and not self.testing_policy:
-            #t0 = time.time()
             self.data.train()
-            #print time.time() - t0
         
         this_int_action = self.get_action()
         return_action = Action()
