@@ -72,9 +72,10 @@ class NeuralQLearnAgent(Agent):
         self.mini_batch_size = 32
         self.num_mini_batches = 1
         self.frame_count = 0
+        self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .00005
+        learning_rate = .0001
         self.testing_policy = False
         self.epoch_counter = 0
         self.epochs_until_test = 5
@@ -115,18 +116,18 @@ class NeuralQLearnAgent(Agent):
         else:
         
             self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
-                            (1, 1), "first conv layer", irange=.01, 
+                            (1, 1), "first conv layer", irange=.1, 
                                             kernel_stride=(4, 4), min_zero=True)
                                             
             self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
-                            (1, 1), (1, 1), "second conv layer", irange=.01, 
+                            (1, 1), (1, 1), "second conv layer", irange=.1, 
                                             kernel_stride=(2, 2), min_zero=True)
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
-                            layer_name="rectified layer", irange=.01)
+                            layer_name="rectified layer", irange=.1)
                             
             self.output_layer = mlp.Linear(self.num_actions, "output layer", 
-                            irange=.01)
+                            irange=.1)
 
             layers = [self.first_conv_layer, self.second_conv_layer, 
                             self.rect_layer, self.output_layer]
@@ -135,12 +136,11 @@ class NeuralQLearnAgent(Agent):
                                     num_channels=4, axes=('c', 0, 1, 'b')), 
                                     batch_size=self.mini_batch_size)
 
-
         self.data = nqd.NeuralQLearnDataset(self.cnn, mini_batch_size = self.mini_batch_size, 
                                             num_mini_batches = self.num_mini_batches, 
                                             learning_rate=learning_rate)
 
-        #Create appropriate RL-Glue objects for storing these. 
+        #Create appropriate RL-Glue objects for storing these.
         self.last_action=Action()
         self.last_observation=Observation()
 
@@ -185,7 +185,7 @@ class NeuralQLearnAgent(Agent):
             return self.cur_action
             
         if self.testing_policy:
-            epsilon = .05
+            epsilon = .000001
         else:
             epsilon = self.epsilon
             
@@ -200,7 +200,7 @@ class NeuralQLearnAgent(Agent):
             state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((4, 80, 80, 1))
             
             qvalues = self.data.fprop_func(state)
-             
+            
             qvalues = qvalues.tolist()
             
             val = qvalues[0].index(max(qvalues[0]))
@@ -294,13 +294,14 @@ class NeuralQLearnAgent(Agent):
             reward = -1
             
         
-        if not self.testing_policy:
-            self.data.add(self.last_observation.intArray, \
+        self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, False)
         
         if len(self.data) > 1000 and not self.testing_policy:
+            #t0 = time.time()
             self.data.train()
+            #print time.time() - t0
         
         this_int_action = self.get_action()
         return_action = Action()
@@ -349,8 +350,7 @@ class NeuralQLearnAgent(Agent):
         if reward < 0:
             reward = -1
         
-        if not self.testing_policy:
-            self.data.add(self.last_observation.intArray, 
+        self.data.add(self.last_observation.intArray, 
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, True)
                         
@@ -361,9 +361,6 @@ class NeuralQLearnAgent(Agent):
             self.epoch_counter += 1
             if self.epoch_counter == self.epochs_until_test:
                 self.testing_policy = True
-            
-        #self.data.reset_data()
-        
 
     def agent_cleanup(self):
         """
