@@ -109,6 +109,10 @@ class NeuralQLearnDataset:
         self.rmsprop_update = theano.function(theano_args, updates=rmsprop_updates,
                                                 on_unused_input='ignore')
         
+        temp = T.tensor4()
+        
+        self.dimshuf_func = theano.function([temp], temp.dimshuffle(1, 2, 3, 0))
+        
         #self.grads_func = theano.function(theano_args, grads)
                                         
         self.cost_function = theano.function(theano_args, cost)
@@ -189,16 +193,19 @@ class NeuralQLearnDataset:
             rewards.append(reward)
         
         #normalize values
-        states = states.reshape(self.image_shape) / 256.0
-        next_states = next_states.reshape(self.image_shape) / 256.0
+        states = states.reshape((32, 4, 80, 80)) / 256.0
+        next_states = next_states.reshape((32, 4, 80, 80)) / 256.0
+        
+        states = self.dimshuf_func(states)
+        next_states = self.dimshuf_func(next_states)
         
         #get output predictions from nn using the states batch
-        q_sa_list = self.fprop_func(states.reshape(self.image_shape))
+        q_sa_list = self.fprop_func(states)
         
         #get max of Q(s, a)' for next state batch
-        q_sa_prime_list = self.fprop_func(next_states.reshape(self.image_shape))
+        q_sa_prime_list = self.fprop_func(next_states)
         
-        #print np.mean(q_sa_list)
+        print np.mean(q_sa_list)
         print q_sa_list[0]
         print q_sa_prime_list[0]
         #print ""
@@ -219,17 +226,13 @@ class NeuralQLearnDataset:
                 q_sa_list[i][actions[i]] = rewards[i]
         
         if self.print_cost:
-            print self.cost_function(states_np_array.reshape(self.image_shape), 
-                                                              q_sa_list)
-                                                
-        states = states.reshape((4, 80, 80, self.mini_batch_size))
+            print self.cost_function(states, q_sa_list)
 
         self.training(states, q_sa_list)
         #self.rmsprop_update(states, q_sa_list)
         
         if self.print_cost:
-            print self.cost_function(states.reshape(self.image_shape), 
-                                                            q_sa_list)
+            print self.cost_function(states, q_sa_list)
         
         
         #for i in self.grads_func(states.reshape(self.image_shape), q_sa_list):
