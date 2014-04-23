@@ -95,12 +95,14 @@ class NeuralQLearnDataset:
         updates = OrderedDict()
         
         updates.update(dict(safe_zip(params, [param - self.learning_rate * 
-                                (gradients[param]) for param in params])))
+                                (gradients[param] / 
+                                T.sqrt(rms_vals_dict[param] + 1e-8)) 
+                                for param in params])))
                                                     
         rmsprop_updates = OrderedDict()
         
         rmsprop_updates.update(dict(safe_zip(self.rms_vals, [(rms_vals_dict[param] * .9) + 
-                                            (T.sqr(gradients[param] + .0000000001) * .1)
+                                            (T.sqr(gradients[param]) * .1)
                                                 for param in params])))
         
         self.training = theano.function(theano_args, updates=updates, 
@@ -220,8 +222,7 @@ class NeuralQLearnDataset:
             #perform qlearning update to get target value Q(s, a)
             next_state_max = np.max(q_sa_prime_list[i])
             if not terminals[i]:
-                #q_sa_list[i][actions[i]] = rewards[i] + (self.gamma * next_state_max)
-                q_sa_list[i][actions[i]] = self.randGenerator.random()
+                q_sa_list[i][actions[i]] = rewards[i] + (self.gamma * next_state_max)
             else:
                 q_sa_list[i][actions[i]] = rewards[i]
         
@@ -229,7 +230,7 @@ class NeuralQLearnDataset:
             print self.cost_function(states, q_sa_list)
 
         self.training(states, q_sa_list)
-        #self.rmsprop_update(states, q_sa_list)
+        self.rmsprop_update(states, q_sa_list)
         
         if self.print_cost:
             print self.cost_function(states, q_sa_list)

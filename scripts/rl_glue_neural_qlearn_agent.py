@@ -67,7 +67,7 @@ class NeuralQLearnAgent(Agent):
         """
         self.start_time = time.time()
         self.image = None
-        self.show_ale = False
+        self.show_ale = True
         self.total_reward = 0
         self.mini_batch_size = 32
         self.num_mini_batches = 1
@@ -75,12 +75,12 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .0001
-        self.testing_policy = False
+        learning_rate = .00001
+        self.testing_policy = True
         self.epoch_counter = 0
         self.epochs_until_test = 5
         self.policy_test_file_name = "results.csv"
-        load_file = False
+        load_file = True
         load_file_name = "cnnparams.pkl"
         self.save_file_name = "cnnparams.pkl"
         self.counter = 0
@@ -145,7 +145,7 @@ class NeuralQLearnAgent(Agent):
         self.last_observation=Observation()
 
         thefile = open(self.policy_test_file_name, "w")
-        thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds\n")
+        thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds, Frames trained\n")
         thefile.close()
 
 
@@ -198,7 +198,11 @@ class NeuralQLearnAgent(Agent):
         else:
             state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((4, 80, 80, 1))
             
+            state /= 256.0
+            
             qvalues = self.data.fprop_func(state)
+            
+            print "prediction"
             
             qvalues = qvalues.tolist()
             
@@ -298,6 +302,7 @@ class NeuralQLearnAgent(Agent):
                         reward, False)
         
         if len(self.data) > 1000 and not self.testing_policy:
+            self.frames_trained += 1
             self.data.train()
         
         this_int_action = self.get_action()
@@ -332,7 +337,8 @@ class NeuralQLearnAgent(Agent):
             thefile.write(str(self.total_reward) +  ", ")
             thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
             thefile.write(str(self.frame_count) + ", ")
-            thefile.write(str(time.time() - self.start_time) + "\n")
+            thefile.write(str(time.time() - self.start_time) + ", ")
+            thefile.write(str(self.frames_trained) + "\n")
             thefile.close()
         
         self.total_reward = 0
