@@ -44,11 +44,11 @@ class NeuralQLearnDataset:
         
         self.rms_vals = []
         
-        self.rms_vals.append(theano.shared(np.ones((4, 8, 8, 16), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((16, 19, 19), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((16, 4, 4, 32), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((32, 9, 9), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((2592, 256), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((4, 8, 8, 64), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((64, 19, 19), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((64, 4, 4, 128), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((128, 9, 9), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((10368, 256), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((256,), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((256, 3), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((3,), dtype='float32')))
@@ -159,11 +159,8 @@ class NeuralQLearnDataset:
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history, multiple of 4 so state matches
             #action set
-            while True:
-                data_num = self.randGenerator.randint(8, len(self.data) - 5)
-                if data_num % 4 == 0:
-                    break
-                    
+            data_num = (self.randGenerator.randint(8, (len(self.data) - 5) / 4) * 4) - 2
+            
             terminal_state = False
             
             #if the state is terminal, subtract 4
@@ -184,13 +181,13 @@ class NeuralQLearnDataset:
             else:
                 states = np.append(states, self.get_state(data_num))
                 next_states = np.append(next_states, self.get_state(data_num + 4))
-            actions.append(self.actions[data_num + 1])
+            actions.append(self.actions[data_num])
             terminals.append(terminal_state)
             
             reward = 0
             for i in range(4):
-                if self.rewards[i + 1 + data_num] != 0:
-                    reward += self.rewards[i + 1 + data_num]
+                if self.rewards[data_num - i] != 0:
+                    reward += self.rewards[data_num - i]
             
             rewards.append(reward)
         

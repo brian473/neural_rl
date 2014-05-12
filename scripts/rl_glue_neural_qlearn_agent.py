@@ -67,7 +67,7 @@ class NeuralQLearnAgent(Agent):
         """
         self.start_time = time.time()
         self.image = None
-        self.show_ale = True
+        self.show_ale = False
         self.total_reward = 0
         self.mini_batch_size = 32
         self.num_mini_batches = 1
@@ -75,19 +75,19 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .00001
-        self.testing_policy = True
+        learning_rate = .000001
+        self.testing_policy = False
         self.epoch_counter = 0
         self.epochs_until_test = 5
         self.policy_test_file_name = "results.csv"
-        load_file = True
-        load_file_name = "cnnparams.pkl"
+        load_file = False
+        load_file_name = "cnnparams_test.pkl"
         self.save_file_name = "cnnparams.pkl"
         self.counter = 0
         self.cur_action = 0
         
         #starting value for epsilon-greedy
-        self.epsilon = 1
+        self.epsilon = 1 
 
         TaskSpec = TaskSpecVRLGLUE3.TaskSpecParser(task_spec_string)
         if TaskSpec.valid:
@@ -103,8 +103,8 @@ class NeuralQLearnAgent(Agent):
                 " expecting max action to be a number not a special value"
             self.num_actions=TaskSpec.getIntActions()[0][1]+1
 
+
         self.num_actions = 3
-        
         self.int_states = len(TaskSpec.getIntObservations()) > 0
 
         # Create neural network and initialize trainer and dataset
@@ -115,19 +115,19 @@ class NeuralQLearnAgent(Agent):
             self.cnn = cPickle.load(thefile)
         else:
         
-            self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
-                            (1, 1), "first conv layer", irange=.1, 
+            self.first_conv_layer = maxout.MaxoutConvC01B(64, 1, (8, 8), (1, 1), 
+                            (1, 1), "first conv layer", irange=.01, 
                                             kernel_stride=(4, 4), min_zero=True)
                                             
-            self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
-                            (1, 1), (1, 1), "second conv layer", irange=.1, 
+            self.second_conv_layer = maxout.MaxoutConvC01B(128, 1, (4, 4), 
+                            (1, 1), (1, 1), "second conv layer", irange=.01, 
                                             kernel_stride=(2, 2), min_zero=True)
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
-                            layer_name="rectified layer", irange=.1)
+                            layer_name="rectified layer", irange=.01)
                             
             self.output_layer = mlp.Linear(self.num_actions, "output layer", 
-                            irange=.1)
+                            irange=.01)
 
             layers = [self.first_conv_layer, self.second_conv_layer, 
                             self.rect_layer, self.output_layer]
@@ -144,9 +144,10 @@ class NeuralQLearnAgent(Agent):
         self.last_action=Action()
         self.last_observation=Observation()
 
-        thefile = open(self.policy_test_file_name, "w")
-        thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds, Frames trained\n")
-        thefile.close()
+        if not load_file:
+            thefile = open(self.policy_test_file_name, "w")
+            thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds, Frames trained\n")
+            thefile.close()
 
 
 
@@ -196,13 +197,13 @@ class NeuralQLearnAgent(Agent):
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             val = self.randGenerator.randint(0,self.num_actions-1)
         else:
-            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((4, 80, 80, 1))
+            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((1, 4, 80, 80))
             
             state /= 256.0
             
+            state = self.data.dimshuf_func(state)
+
             qvalues = self.data.fprop_func(state)
-            
-            print "prediction"
             
             qvalues = qvalues.tolist()
             
@@ -285,17 +286,16 @@ class NeuralQLearnAgent(Agent):
         
         """
         
-        self.total_reward += reward
-        
-        self.frame_count += 1
-        
         #set reward to be either -1, 0, or 1 as described in atari paper
         if reward > 0:
             reward = 1
 		
         if reward < 0:
             reward = -1
-            
+        
+        self.total_reward += reward
+        
+        self.frame_count += 1
         
         self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), 
@@ -328,6 +328,12 @@ class NeuralQLearnAgent(Agent):
         Returns: 
             None
         """
+        if reward > 0:
+            reward = 1
+		
+        if reward < 0:
+            reward = -1
+        
         self.total_reward += reward
         
         if self.testing_policy :
@@ -346,12 +352,6 @@ class NeuralQLearnAgent(Agent):
         self.qvalue_count = 0
         self.frame_count = 0
         self.save_params(self.save_file_name)
-        
-        if reward > 0:
-            reward = 1
-		
-        if reward < 0:
-            reward = -1
         
         self.data.add(self.last_observation.intArray, 
                         self.get_val_action(self.last_action.intArray[0]), 
