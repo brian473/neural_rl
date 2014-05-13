@@ -75,7 +75,7 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .000001
+        learning_rate = .001
         self.testing_policy = False
         self.epoch_counter = 0
         self.epochs_until_test = 5
@@ -115,11 +115,11 @@ class NeuralQLearnAgent(Agent):
             self.cnn = cPickle.load(thefile)
         else:
         
-            self.first_conv_layer = maxout.MaxoutConvC01B(64, 1, (8, 8), (1, 1), 
+            self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
                             (1, 1), "first conv layer", irange=.01, 
                                             kernel_stride=(4, 4), min_zero=True)
                                             
-            self.second_conv_layer = maxout.MaxoutConvC01B(128, 1, (4, 4), 
+            self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
                             (1, 1), (1, 1), "second conv layer", irange=.01, 
                                             kernel_stride=(2, 2), min_zero=True)
                                             
@@ -346,6 +346,8 @@ class NeuralQLearnAgent(Agent):
             thefile.write(str(time.time() - self.start_time) + ", ")
             thefile.write(str(self.frames_trained) + "\n")
             thefile.close()
+
+            self.data.remove(self.frame_count)
         
         self.total_reward = 0
         self.qvalue_sum = 0

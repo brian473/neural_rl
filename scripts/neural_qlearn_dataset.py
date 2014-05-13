@@ -44,11 +44,11 @@ class NeuralQLearnDataset:
         
         self.rms_vals = []
         
-        self.rms_vals.append(theano.shared(np.ones((4, 8, 8, 64), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((64, 19, 19), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((64, 4, 4, 128), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((128, 9, 9), dtype='float32')))
-        self.rms_vals.append(theano.shared(np.ones((10368, 256), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((4, 8, 8, 16), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((16, 19, 19), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((16, 4, 4, 32), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((32, 9, 9), dtype='float32')))
+        self.rms_vals.append(theano.shared(np.ones((2592, 256), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((256,), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((256, 3), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((3,), dtype='float32')))
@@ -141,6 +141,14 @@ class NeuralQLearnDataset:
             self.rewards.pop(0)
             self.terminal.pop(0)
 
+
+    def remove(self, num):
+    # removes num last stored data points
+        self.data = self.data[:len(self.data) - num - 1]
+        self.actions = self.actions[:len(self.actions) - num - 1]
+        self.rewards = self.rewards[:len(self.rewards) - num - 1]
+        self.terminal = self.terminal[:len(self.terminal) - num - 1]
+    
     def has_targets(self):
         return True
 
@@ -159,8 +167,19 @@ class NeuralQLearnDataset:
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history, multiple of 4 so state matches
             #action set
-            data_num = (self.randGenerator.randint(8, (len(self.data) - 5) / 4) * 4) - 2
-            
+            while True:
+                data_num = self.randGenerator.randint(8, len(self.data) - 5)
+                
+                action = self.actions[data_num]
+                actions_same = True
+                for i in range(3):
+                    if self.actions[data_num - 1 - i] != action:
+                        actions_same = False
+
+                if actions_same:
+                    break
+                    
+
             terminal_state = False
             
             #if the state is terminal, subtract 4
