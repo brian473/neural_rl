@@ -75,7 +75,8 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .001
+        learning_rate = .00003
+        momentum_factor = 0
         self.testing_policy = False
         self.epoch_counter = 0
         self.epochs_until_test = 5
@@ -116,7 +117,7 @@ class NeuralQLearnAgent(Agent):
         else:
         
             self.first_conv_layer = maxout.MaxoutConvC01B(16, 1, (8, 8), (1, 1), 
-                            (1, 1), "first conv layer", irange=.01, 
+                            (1, 1), "first conv layer", irange=.1, 
                                             kernel_stride=(4, 4), min_zero=True)
                                             
             self.second_conv_layer = maxout.MaxoutConvC01B(32, 1, (4, 4), 
@@ -124,10 +125,10 @@ class NeuralQLearnAgent(Agent):
                                             kernel_stride=(2, 2), min_zero=True)
                                             
             self.rect_layer = mlp.RectifiedLinear(dim=256, 
-                            layer_name="rectified layer", irange=.01)
+                            layer_name="rectified layer", irange=.1)
                             
             self.output_layer = mlp.Linear(self.num_actions, "output layer", 
-                            irange=.01)
+                            irange=.1)
 
             layers = [self.first_conv_layer, self.second_conv_layer, 
                             self.rect_layer, self.output_layer]
@@ -138,7 +139,8 @@ class NeuralQLearnAgent(Agent):
 
         self.data = nqd.NeuralQLearnDataset(self.cnn, mini_batch_size = self.mini_batch_size, 
                                             num_mini_batches = self.num_mini_batches, 
-                                            learning_rate=learning_rate)
+                                            learning_rate=learning_rate, 
+                                            momentum_step_size=momentum_factor)
 
         #Create appropriate RL-Glue objects for storing these.
         self.last_action=Action()
@@ -189,15 +191,15 @@ class NeuralQLearnAgent(Agent):
         else:
             epsilon = self.epsilon
             
-            if len(self.data) > 1000:
-                self.epsilon -= .000001 * self.num_mini_batches
+            if len(self.data) > 10000:
+                self.epsilon -= .0000005 * self.num_mini_batches
                 if (self.epsilon < .1):
                     self.epsilon = .1
                 
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             val = self.randGenerator.randint(0,self.num_actions-1)
         else:
-            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((1, 4, 80, 80))
+            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((1, 1, 160, 160))
             
             state /= 256.0
             
@@ -301,7 +303,7 @@ class NeuralQLearnAgent(Agent):
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, False)
         
-        if len(self.data) > 1000 and not self.testing_policy:
+        if len(self.data) > 10000 and not self.testing_policy:
             self.frames_trained += 1
             self.data.train()
         
@@ -364,7 +366,9 @@ class NeuralQLearnAgent(Agent):
             self.testing_policy = False
         else:
             self.epoch_counter += 1
-            if self.epoch_counter == self.epochs_until_test:
+            if len(self.data) < 10000:
+                self.epoch_counter = 0
+            elif self.epoch_counter == self.epochs_until_test:
                 self.testing_policy = True
 
     def agent_cleanup(self):

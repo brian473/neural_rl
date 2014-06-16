@@ -22,7 +22,7 @@ class NeuralQLearnDataset:
 
 
     def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 1000000, \
-                    gamma = .9, learning_rate = .5):
+                    gamma = .9, learning_rate = .5, momentum_step_size=.3):
         """
         Sets up variables for later use.
         
@@ -38,12 +38,13 @@ class NeuralQLearnDataset:
         self.rewards = []
         self.terminal = []
         self.counter = 0
+        self.momentum_step_size = momentum_step_size
         self.action = 0
         self.cnn = cnn
         self.image_shape = (4, 80, 80, self.mini_batch_size * self.num_mini_batches)
         
         self.rms_vals = []
-        
+    
         self.rms_vals.append(theano.shared(np.ones((4, 8, 8, 16), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((16, 19, 19), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((16, 4, 4, 32), dtype='float32')))
@@ -53,6 +54,28 @@ class NeuralQLearnDataset:
         self.rms_vals.append(theano.shared(np.ones((256, 3), dtype='float32')))
         self.rms_vals.append(theano.shared(np.ones((3,), dtype='float32')))
         
+        self.momentum_vals = []
+    
+        self.momentum_vals.append(theano.shared(np.zeros((4, 8, 8, 16), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((16, 19, 19), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((16, 4, 4, 32), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((32, 9, 9), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((2592, 256), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((256,), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((256, 3), dtype='float32')))
+        self.momentum_vals.append(theano.shared(np.zeros((3,), dtype='float32')))
+        
+        self.grad_vals = []
+
+        self.grad_vals.append(theano.shared(np.zeros((4, 8, 8, 16), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((16, 19, 19), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((16, 4, 4, 32), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((32, 9, 9), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((2592, 256), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((256,), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((256, 3), dtype='float32')))
+        self.grad_vals.append(theano.shared(np.zeros((3,), dtype='float32')))
+
         self.setup_training()
         
     def setup_training(self):
@@ -69,6 +92,7 @@ class NeuralQLearnDataset:
         space_tuple = mapping.flatten(data_specs[0], return_tuple=True)
         source_tuple = mapping.flatten(data_specs[1], return_tuple=True)
         
+        #theano_args contains information about the shape of each layer
         theano_args = []
         for space, source in safe_zip(space_tuple, source_tuple):
             name = '%s[%s]' % (self.__class__.__name__, source)
@@ -79,44 +103,79 @@ class NeuralQLearnDataset:
         
         y_hat = self.cnn.fprop(theano_args[0])
         
+        #function used for faster fprop
         self.fprop_func = theano.function([theano_args[0]], y_hat)
         
         cost = self.cnn.cost(theano_args[1], y_hat)
-        
-        lr_scalers = self.cnn.get_lr_scalers()
-        
+       
+        #params is the list of layers in the NN
         params = list(self.cnn.get_params())
+
         grads = T.grad(cost, params, disconnected_inputs='ignore')
-        
+
         gradients = OrderedDict(izip(params, grads))
         
         rms_vals_dict = OrderedDict(izip(params, self.rms_vals))
+
+        momentum_vals_dict = OrderedDict(izip(params, self.momentum_vals))
         
+        grad_vals_dict = OrderedDict(izip(params, self.grad_vals))
+
+        grad_update = OrderedDict()
+
+        grad_update.update(dict(safe_zip(self.grad_vals, [gradients[param]
+                                                    for param in params])))
+
+
+        #function used for getting gradients
+        #this is so that we only calculate gradients once, then
+        #the same values are used for updating momentum, rmsprop, and training
+        self.grad_update_func = theano.function(theano_args, updates=grad_update,
+                                                on_unused_input='ignore')
+
         updates = OrderedDict()
         
         updates.update(dict(safe_zip(params, [param - self.learning_rate * 
-                                (gradients[param] / 
-                                T.sqrt(rms_vals_dict[param] + 1e-8)) 
-                                for param in params])))
+                                (grad_vals_dict[param] / 
+                                T.sqrt(rms_vals_dict[param] + 1e-8)) +
+                                (self.momentum_step_size * 
+                                momentum_vals_dict[param])
+                                        for param in params])))
                                                     
         rmsprop_updates = OrderedDict()
         
+        #rmsprop update function
         rmsprop_updates.update(dict(safe_zip(self.rms_vals, [(rms_vals_dict[param] * .9) + 
-                                            (T.sqr(gradients[param]) * .1)
+                                            (T.sqr(grad_vals_dict[param]) * .1)
                                                 for param in params])))
         
-        self.training = theano.function(theano_args, updates=updates, 
+        self.training = theano.function([], updates=updates, 
                                         on_unused_input='ignore')
                                         
-        self.rmsprop_update = theano.function(theano_args, updates=rmsprop_updates,
+        self.rmsprop_update = theano.function([], updates=rmsprop_updates,
                                                 on_unused_input='ignore')
         
+        momentum_updates = OrderedDict()
+
+        #momentum update function
+        momentum_updates.update(dict(safe_zip(self.momentum_vals, [-self.learning_rate * 
+                                            (grad_vals_dict[param] / T.sqrt(rms_vals_dict[param] + 
+                                                            1e-8)) + (self.momentum_step_size * 
+                                                                momentum_vals_dict[param])
+                                                                    for param in params])))
+
+        self.momentum_update = theano.function([], updates=momentum_updates, 
+                                                            on_unused_input='ignore')
+
+
         temp = T.tensor4()
         
+        #function used for shuffling dimensions into c01b format
         self.dimshuf_func = theano.function([temp], temp.dimshuffle(1, 2, 3, 0))
         
-        #self.grads_func = theano.function(theano_args, grads)
-                                        
+
+        #functions to get grads and costs for debugging
+        self.grads_func = theano.function(theano_args, grads)
         self.cost_function = theano.function(theano_args, cost)
         
 
@@ -125,6 +184,8 @@ class NeuralQLearnDataset:
         Used for adding data to the dataset.
 
         """
+
+        #make image square, must be square for the NN implementation
         image = Image.fromarray(data.reshape((80, 105)))
         image = image.resize((80, 80))
         
@@ -135,6 +196,8 @@ class NeuralQLearnDataset:
         self.rewards.append(reward)
         self.terminal.append(terminal)
 
+
+        #remove first data point if history size is too large
         if len(self.data) > self.history_size:
             self.data.pop(0)
             self.actions.pop(0)
@@ -165,34 +228,28 @@ class NeuralQLearnDataset:
         
         #create training batch
         for i in range(self.mini_batch_size * self.num_mini_batches):
-            #select a random point in history, multiple of 4 so state matches
-            #action set
+            #select a random point in history
             while True:
                 data_num = self.randGenerator.randint(8, len(self.data) - 5)
                 
                 action = self.actions[data_num]
-                actions_same = True
+                continue_loop = True
                 for i in range(3):
                     if self.actions[data_num - 1 - i] != action:
-                        actions_same = False
+                        continue_loop = False
 
-                if actions_same:
+                for i in range(4):
+                    if self.terminal[data_num - i]:
+                        continue_loop = False
+
+                for i in range(3):
+                    if self.terminal[data_num + 3 - i]:
+                        continue_loop = False
+
+                if continue_loop:
                     break
                     
 
-            terminal_state = False
-            
-            #if the state is terminal, subtract 4
-            for i in range(4):
-                if self.terminal[data_num - i]:
-                    terminal_state = True
-                    data_num -= 4
-                    
-            #determine if the next state is terminal
-            for i in range(4):
-                if self.terminal[data_num + 4 - i]:
-                    terminal_state = True
-            
             #put values into lists
             if states == None:
                 states = self.get_state(data_num)
@@ -201,7 +258,7 @@ class NeuralQLearnDataset:
                 states = np.append(states, self.get_state(data_num))
                 next_states = np.append(next_states, self.get_state(data_num + 4))
             actions.append(self.actions[data_num])
-            terminals.append(terminal_state)
+            terminals.append(self.terminal[data_num + 4])
             
             reward = 0
             for i in range(4):
@@ -220,7 +277,7 @@ class NeuralQLearnDataset:
         #get output predictions from nn using the states batch
         q_sa_list = self.fprop_func(states)
         
-        #get max of Q(s, a)' for next state batch
+        #get Q(s, a)' for next state batch
         q_sa_prime_list = self.fprop_func(next_states)
         
         print np.mean(q_sa_list)
@@ -245,36 +302,25 @@ class NeuralQLearnDataset:
         if self.print_cost:
             print self.cost_function(states, q_sa_list)
 
-        self.training(states, q_sa_list)
-        self.rmsprop_update(states, q_sa_list)
+
+        #for i in self.grads_func(states, q_sa_list):
+        #    print i.shape
+        
+        
+        self.grad_update_func(states, q_sa_list)
+        self.training()
+        self.momentum_update()
+        self.rmsprop_update()
         
         if self.print_cost:
             print self.cost_function(states, q_sa_list)
-        
-        
-        #for i in self.grads_func(states.reshape(self.image_shape), q_sa_list):
-        #    print i.shape
-        
 
     def get_state(self, num):
-        #combine four states at num
+        #combines four images starting at num and going backwards
+        #returns state as a 1D nparray
             
-        state = np.append(self.data[num - 3].reshape((6400)).astype('float32'), self.data[num - 2].reshape((6400)).astype('float32'), axis=0)
-        state = np.append(state, self.data[num - 1].reshape((6400)).astype('float32'), axis=0)
-        state = np.append(state, self.data[num].reshape((6400)).astype('float32'), axis=0)
+        state = np.append(self.data[num - 3].reshape((6400)).astype('float32'), self.data[num - 2].reshape((6400)).astype('float32'))
+        state = np.append(state, self.data[num - 1].reshape((6400)).astype('float32'))
+        state = np.append(state, self.data[num].reshape((6400)).astype('float32'))
         
         return state
-
-    def get_cur_state(self):
-        #combine last four states
-        state = self.get_state(len(self.data) - 1)
-        
-        #divide by 256 to make values < 1 for neural net
-        state /= 256.0
-        
-        #create theano variables
-        state = theano.shared(state, name='input')
-        state = T.reshape(state, (4, 80, 80, 1))
-        state = T.cast(state, dtype='floatX')
-        return state
-        
