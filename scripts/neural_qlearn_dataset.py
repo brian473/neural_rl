@@ -233,20 +233,28 @@ class NeuralQLearnDataset:
                 data_num = self.randGenerator.randint(8, len(self.data) - 5)
                 
                 action = self.actions[data_num]
-                continue_loop = True
+                continue_loop = False
+                #make sure that the action is aligned with actions
+                #the three actions before num must match num
                 for i in range(3):
                     if self.actions[data_num - 1 - i] != action:
-                        continue_loop = False
+                        continue_loop = True
 
+                #make sure that none of the actions are terminal
+                #this is because we only want the next state to be terminal
                 for i in range(4):
                     if self.terminal[data_num - i]:
-                        continue_loop = False
+                        continue_loop = True
 
+                #in the next state, only the last image can be terminal
+                #this is to avoid confusing sets of images where it switches
+                #to the next game. this will limit our set of terminal states
+                #that we can use, but I thought it would help with training.
                 for i in range(3):
                     if self.terminal[data_num + 3 - i]:
-                        continue_loop = False
+                        continue_loop = True
 
-                if continue_loop:
+                if not continue_loop:
                     break
                     
 
