@@ -232,26 +232,10 @@ class NeuralQLearnDataset:
             while True:
                 data_num = self.randGenerator.randint(8, len(self.data) - 5)
                 
-                action = self.actions[data_num]
                 continue_loop = False
-                #make sure that the action is aligned with actions
-                #the three actions before num must match num
-                for i in range(3):
-                    if self.actions[data_num - 1 - i] != action:
-                        continue_loop = True
 
-                #make sure that none of the actions are terminal
-                #this is because we only want the next state to be terminal
                 for i in range(4):
                     if self.terminal[data_num - i]:
-                        continue_loop = True
-
-                #in the next state, only the last image can be terminal
-                #this is to avoid confusing sets of images where it switches
-                #to the next game. this will limit our set of terminal states
-                #that we can use, but I thought it would help with training.
-                for i in range(3):
-                    if self.terminal[data_num + 3 - i]:
                         continue_loop = True
 
                 if not continue_loop:
@@ -261,23 +245,26 @@ class NeuralQLearnDataset:
             #put values into lists
             if states == None:
                 states = self.get_state(data_num)
-                next_states = self.get_state(data_num + 4)
+                next_states = self.get_state(data_num + 1)
             else:
                 states = np.append(states, self.get_state(data_num))
-                next_states = np.append(next_states, self.get_state(data_num + 4))
-            actions.append(self.actions[data_num])
-            terminals.append(self.terminal[data_num + 4])
+                next_states = np.append(next_states, self.get_state(data_num + 1))
+            actions.append(self.actions[data_num + 1])
+            terminals.append(self.terminal[data_num + 1])
             
-            reward = 0
-            for i in range(4):
-                if self.rewards[data_num - i] != 0:
-                    reward += self.rewards[data_num - i]
+
             
+            reward = self.rewards[data_num + 1]
+            #reward = 0
+
+            #for i in range (4):
+            #    reward += self.rewards[data_num - i + 4]
+
             rewards.append(reward)
         
         #normalize values
-        states = states.reshape((32, 4, 80, 80)) / 256.0
-        next_states = next_states.reshape((32, 4, 80, 80)) / 256.0
+        states = states.reshape((32, 4, 80, 80)) / 128.0
+        next_states = next_states.reshape((32, 4, 80, 80)) / 128.0
         
         states = self.dimshuf_func(states)
         next_states = self.dimshuf_func(next_states)

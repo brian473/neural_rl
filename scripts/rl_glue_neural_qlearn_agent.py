@@ -84,8 +84,6 @@ class NeuralQLearnAgent(Agent):
         load_file = False
         load_file_name = "cnnparams_test.pkl"
         self.save_file_name = "cnnparams.pkl"
-        self.counter = 0
-        self.cur_action = 0
         
         #starting value for epsilon-greedy
         self.epsilon = 1 
@@ -148,7 +146,7 @@ class NeuralQLearnAgent(Agent):
 
         if not load_file:
             thefile = open(self.policy_test_file_name, "w")
-            thefile.write("Reward, Average predicted Q value, Episode frames, Episode length in seconds, Frames trained\n")
+            thefile.write("Reward, Average predicted Q value, Episode frames, Current epsilon value, Frames trained\n")
             thefile.close()
 
 
@@ -182,26 +180,22 @@ class NeuralQLearnAgent(Agent):
         Get predictions on the last state to get the next action from qvalues.
         Uses epsilon-greedy.
         """
-        self.counter += 1
-        if self.counter != 4:
-            return self.cur_action
-            
         if self.testing_policy:
             epsilon = .05
         else:
             epsilon = self.epsilon
             
             if len(self.data) > 10000:
-                self.epsilon -= .0000005 * self.num_mini_batches
+                self.epsilon -= (.000001 * self.num_mini_batches)
                 if (self.epsilon < .1):
                     self.epsilon = .1
                 
         if self.randGenerator.random() < epsilon or len(self.data) <= 7:
             val = self.randGenerator.randint(0,self.num_actions-1)
         else:
-            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((1, 1, 160, 160))
+            state = self.data.get_state(len(self.data) - 1).astype('float32').reshape((1, 4, 80, 80))
             
-            state /= 256.0
+            state /= 128.0
             
             state = self.data.dimshuf_func(state)
 
@@ -215,10 +209,6 @@ class NeuralQLearnAgent(Agent):
             self.qvalue_count += 1
         
         val = self.get_action_val(val)
-        
-        if self.counter == 4:
-            self.counter = 0
-            self.cur_action = val
 
         return val
         
@@ -287,6 +277,7 @@ class NeuralQLearnAgent(Agent):
            An action of type rlglue.types.Action
         
         """
+        self.total_reward += reward
         
         #set reward to be either -1, 0, or 1 as described in atari paper
         if reward > 0:
@@ -294,8 +285,6 @@ class NeuralQLearnAgent(Agent):
 		
         if reward < 0:
             reward = -1
-        
-        self.total_reward += reward
         
         self.frame_count += 1
         
@@ -330,13 +319,13 @@ class NeuralQLearnAgent(Agent):
         Returns: 
             None
         """
+        self.total_reward += reward
+
         if reward > 0:
             reward = 1
 		
         if reward < 0:
             reward = -1
-        
-        self.total_reward += reward
         
         if self.testing_policy :
             #print the reward for this policy
@@ -345,7 +334,7 @@ class NeuralQLearnAgent(Agent):
             thefile.write(str(self.total_reward) +  ", ")
             thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
             thefile.write(str(self.frame_count) + ", ")
-            thefile.write(str(time.time() - self.start_time) + ", ")
+            thefile.write(str(self.epsilon) + ", ")
             thefile.write(str(self.frames_trained) + "\n")
             thefile.close()
 
