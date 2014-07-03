@@ -249,12 +249,12 @@ class NeuralQLearnDataset:
             else:
                 states = np.append(states, self.get_state(data_num))
                 next_states = np.append(next_states, self.get_state(data_num + 1))
-            actions.append(self.actions[data_num + 1])
+            actions.append(self.actions[data_num])
             terminals.append(self.terminal[data_num + 1])
             
 
             
-            reward = self.rewards[data_num + 1]
+            reward = self.rewards[data_num]
             #reward = 0
 
             #for i in range (4):
@@ -269,7 +269,7 @@ class NeuralQLearnDataset:
         states = self.dimshuf_func(states)
         next_states = self.dimshuf_func(next_states)
         
-        #get output predictions from nn using the states batch
+        #get Q(s, a) for state batch
         q_sa_list = self.fprop_func(states)
         
         #get Q(s, a)' for next state batch
@@ -300,8 +300,7 @@ class NeuralQLearnDataset:
 
         #for i in self.grads_func(states, q_sa_list):
         #    print i.shape
-        
-        
+                
         self.grad_update_func(states, q_sa_list)
         self.training()
         self.momentum_update()

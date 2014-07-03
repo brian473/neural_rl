@@ -75,7 +75,7 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .00003
+        learning_rate = .000003
         momentum_factor = 0
         self.testing_policy = False
         self.epoch_counter = 0
