@@ -75,15 +75,18 @@ class NeuralQLearnAgent(Agent):
         self.frames_trained = 0
         self.qvalue_sum = 0
         self.qvalue_count = 0
-        learning_rate = .000003
-        momentum_factor = 0
+        self.learning_rate = .00001
+        momentum_factor = 0.9
         self.testing_policy = False
         self.epoch_counter = 0
         self.epochs_until_test = 5
         self.policy_test_file_name = "results.csv"
         load_file = False
-        load_file_name = "cnnparams_test.pkl"
+        load_file_name = "cnnparams.pkl"
         self.save_file_name = "cnnparams.pkl"
+        self.lower_learning_rate = .000000001
+        self.anneal_length = 650000
+
         
         #starting value for epsilon-greedy
         self.epsilon = 1 
@@ -137,7 +140,7 @@ class NeuralQLearnAgent(Agent):
 
         self.data = nqd.NeuralQLearnDataset(self.cnn, mini_batch_size = self.mini_batch_size, 
                                             num_mini_batches = self.num_mini_batches, 
-                                            learning_rate=learning_rate, 
+                                            learning_rate=self.learning_rate, 
                                             momentum_step_size=momentum_factor)
 
         #Create appropriate RL-Glue objects for storing these.
@@ -146,7 +149,7 @@ class NeuralQLearnAgent(Agent):
 
         if not load_file:
             thefile = open(self.policy_test_file_name, "w")
-            thefile.write("Reward, Average predicted Q value, Episode frames, Current epsilon value, Frames trained\n")
+            thefile.write("Reward, Average predicted Q value, Episode frames, Current epsilon value, Frames trained, Current learning rate\n")
             thefile.close()
 
 
@@ -214,18 +217,18 @@ class NeuralQLearnAgent(Agent):
         
     def get_action_val(self, val):
         if val == 0:
-            return 1
+            return 0
         elif val == 1:
-            return 7
+            return 11
         elif val == 2:
-            return 8
+            return 12
             
     def get_val_action(self, val):
-        if val == 1:
+        if val == 0:
             return 0
-        elif val == 7:
+        elif val == 11:
             return 1
-        elif val == 8:
+        elif val == 12:
             return 2
 
     def _show_ale_color(self):
@@ -291,6 +294,11 @@ class NeuralQLearnAgent(Agent):
         self.data.add(self.last_observation.intArray, \
                         self.get_val_action(self.last_action.intArray[0]), 
                         reward, False)
+
+        #if self.frames_trained > 50000:
+           # phi = (self.frames_trained - 50000) / self.anneal_length
+           # self.data.learning_rate = self.learning_rate - ((self.learning_rate - 
+            #                            self.lower_learning_rate) * phi)
         
         if len(self.data) > 10000 and not self.testing_policy:
             self.frames_trained += 1
@@ -335,7 +343,8 @@ class NeuralQLearnAgent(Agent):
             thefile.write(str(self.qvalue_sum / self.qvalue_count) + ", ")
             thefile.write(str(self.frame_count) + ", ")
             thefile.write(str(self.epsilon) + ", ")
-            thefile.write(str(self.frames_trained) + "\n")
+            thefile.write(str(self.frames_trained) + ", ")
+            thefile.write(str(self.data.learning_rate.get_value()) + "\n")
             thefile.close()
 
             self.data.remove(self.frame_count)

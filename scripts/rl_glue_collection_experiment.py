@@ -14,7 +14,7 @@ import rlglue.RLGlue as RLGlue
 import time
 
 def main():
-    num_episodes = 1000
+    num_episodes = 10000000
     max_steps_per_episode = 50000
     RLGlue.RL_init()
     for episode in range(0,num_episodes):

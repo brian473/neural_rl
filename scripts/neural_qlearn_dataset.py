@@ -22,15 +22,15 @@ class NeuralQLearnDataset:
 
 
     def __init__(self, cnn, mini_batch_size, num_mini_batches, history_size = 1000000, \
-                    gamma = .9, learning_rate = .5, momentum_step_size=.3):
+                    gamma = .9, learning_rate = .5, momentum_step_size=.9):
         """
         Sets up variables for later use.
         
         """
-        self.print_cost = False
+        self.print_cost = True
         self.mini_batch_size = mini_batch_size
         self.num_mini_batches = num_mini_batches
-        self.learning_rate = learning_rate
+        self.learning_rate = theano.shared(np.cast['float32'](learning_rate))
         self.history_size = history_size
         self.gamma = gamma
         self.data = []
@@ -229,18 +229,12 @@ class NeuralQLearnDataset:
         #create training batch
         for i in range(self.mini_batch_size * self.num_mini_batches):
             #select a random point in history
-            while True:
-                data_num = self.randGenerator.randint(8, len(self.data) - 5)
+            data_num = self.randGenerator.randint(8, len(self.data) - 5)
                 
-                continue_loop = False
-
-                for i in range(4):
-                    if self.terminal[data_num - i]:
-                        continue_loop = True
-
-                if not continue_loop:
+            for i in range(3):
+                if self.terminal[data_num - (i + 1)]:
+                    data_num -= (i + 1)
                     break
-                    
 
             #put values into lists
             if states == None:
@@ -248,11 +242,9 @@ class NeuralQLearnDataset:
                 next_states = self.get_state(data_num + 1)
             else:
                 states = np.append(states, self.get_state(data_num))
-                next_states = np.append(next_states, self.get_state(data_num + 1))
+                next_states = np.append(next_states, self.get_state(data_num + 4))
             actions.append(self.actions[data_num])
-            terminals.append(self.terminal[data_num + 1])
-            
-
+            terminals.append(self.terminal[data_num])
             
             reward = self.rewards[data_num]
             #reward = 0
@@ -294,8 +286,7 @@ class NeuralQLearnDataset:
             else:
                 q_sa_list[i][actions[i]] = rewards[i]
         
-        if self.print_cost:
-            print self.cost_function(states, q_sa_list)
+        cost_before = self.cost_function(states, q_sa_list)
 
 
         #for i in self.grads_func(states, q_sa_list):
@@ -306,8 +297,14 @@ class NeuralQLearnDataset:
         self.momentum_update()
         self.rmsprop_update()
         
-        if self.print_cost:
-            print self.cost_function(states, q_sa_list)
+        cost_after = self.cost_function(states, q_sa_list)
+
+        print "Cost difference:", cost_before - cost_after
+
+        #if (cost_after / cost_before < 1.0000001):
+         #   self.learning_rate.set_value(np.cast['float32'](self.learning_rate.get_value() * 1.001))
+        #else:
+        #    self.learning_rate.set_value(np.cast['float32'](self.learning_rate.get_value() * .9))
 
     def get_state(self, num):
         #combines four images starting at num and going backwards
